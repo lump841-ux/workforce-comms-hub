@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS clients (
 CREATE TABLE IF NOT EXISTS client_orgs (
   id TEXT PRIMARY KEY,
   company_name TEXT NOT NULL,
+  contact_email TEXT,
+  contact_phone TEXT,
+  notification_prefs TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

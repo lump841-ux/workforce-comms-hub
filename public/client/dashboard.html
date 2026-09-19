@@ -3,22 +3,33 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Client Dashboard — Twanova</title>
+<title>Client Hub — Twanova</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
+<div class="mobile-topbar">
+  <button class="hamburger" onclick="toggleMobileNav()" aria-label="Menu">☰</button>
+  <img src="../brand-logo-compact.png" alt="Twanova" />
+  <div class="mt-title" id="mtTitle">Dashboard</div>
+</div>
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleMobileNav(false)"></div>
 <div class="app-shell">
-  <div class="sidebar">
-    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Client HR</div></div></div>
+  <div class="sidebar" id="sidebarNav">
+    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Client Hub</div></div></div>
     <div style="padding:0 16px 14px">
-      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);display:block;margin-bottom:4px">Agency</label>
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);display:block;margin-bottom:4px" class="nl-label">Agency</label>
       <select id="agencySwitcher" style="width:100%;font-size:13px" onchange="switchAgency(this.value)"></select>
       <button class="btn btn-outline btn-sm" style="width:100%;margin-top:8px" onclick="openConnectAgencyModal()">+ Connect another agency</button>
     </div>
-    <a class="navlink active" data-tab="overview">📊 Overview</a>
-    <a class="navlink" data-tab="shifts">📅 Temps On-Site</a>
-    <a class="navlink" data-tab="messages">💬 Messages</a>
-    <a class="navlink" data-tab="raise">🚩 Raise an Issue</a>
+    <a class="navlink active" data-tab="overview" data-icon="📊"><span class="nl-icon">📊</span><span class="nl-label">Dashboard</span></a>
+    <a class="navlink" data-tab="workers" data-icon="👥"><span class="nl-icon">👥</span><span class="nl-label">Workers</span></a>
+    <a class="navlink" data-tab="shifts" data-icon="🗓️"><span class="nl-icon">🗓️</span><span class="nl-label">Shifts</span></a>
+    <a class="navlink" data-tab="attendance" data-icon="🕓"><span class="nl-icon">🕓</span><span class="nl-label">Attendance</span></a>
+    <a class="navlink" data-tab="messages" data-icon="💬"><span class="nl-icon">💬</span><span class="nl-label">Messages</span></a>
+    <a class="navlink" data-tab="issues" data-icon="⚠️"><span class="nl-icon">⚠️</span><span class="nl-label">Issues</span></a>
+    <a class="navlink" data-tab="replacements" data-icon="🔁"><span class="nl-icon">🔁</span><span class="nl-label">Replacements</span></a>
+    <a class="navlink" data-tab="reports" data-icon="📈"><span class="nl-icon">📈</span><span class="nl-label">Reports</span></a>
+    <a class="navlink" data-tab="settings" data-icon="⚙️"><span class="nl-icon">⚙️</span><span class="nl-label">Settings</span></a>
     <div class="sidebar-foot">
       <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role">Client HR</div></div></div>
       <button class="logout-btn" onclick="logout()">Sign out</button>
@@ -31,9 +42,39 @@
       <div class="stat-grid" id="overviewStats"></div>
     </div>
 
+    <div id="tab-workers" style="display:none">
+      <div class="page-head"><div><div class="page-title">Assigned Workers</div><div class="page-sub">Subcontractor personnel currently working your sites</div></div></div>
+      <div class="card"><div id="workersTable"></div></div>
+    </div>
+
     <div id="tab-shifts" style="display:none">
-      <div class="page-head"><div><div class="page-title">Temps On-Site</div></div></div>
-      <div class="card"><div id="shiftsTable"></div></div>
+      <div class="page-head"><div><div class="page-title">Shift Schedule</div><div class="page-sub">View shift assignments and rotations across all sites</div></div></div>
+      <div class="card">
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+          <label style="margin:0">Date <input type="date" id="shiftDateFilter" onchange="loadShifts()" style="width:auto;display:inline-block" /></label>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('shiftDateFilter').value='';loadShifts()">Clear filter</button>
+        </div>
+        <div id="shiftsTable"></div>
+      </div>
+    </div>
+
+    <div id="tab-attendance" style="display:none">
+      <div class="page-head"><div><div class="page-title">Time &amp; Attendance</div><div class="page-sub">Review active subcontractor shifts and check-ins</div></div></div>
+      <div class="stat-grid" id="attendanceStats"></div>
+      <div class="card" style="margin-top:16px">
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <label style="margin:0">From <input type="date" id="attFrom" onchange="loadAttendance()" style="width:auto;display:inline-block" /></label>
+          <label style="margin:0">To <input type="date" id="attTo" onchange="loadAttendance()" style="width:auto;display:inline-block" /></label>
+          <select id="attStatusFilter" onchange="loadAttendance()" style="width:auto">
+            <option value="">All statuses</option>
+            <option value="completed">Completed</option>
+            <option value="in_progress">In progress</option>
+            <option value="no_show">No show</option>
+            <option value="scheduled">Scheduled</option>
+          </select>
+        </div>
+        <div id="attendanceTable"></div>
+      </div>
     </div>
 
     <div id="tab-messages" style="display:none">
@@ -44,15 +85,64 @@
       </div>
     </div>
 
-    <div id="tab-raise" style="display:none">
-      <div class="page-head"><div><div class="page-title">Raise an Issue</div><div class="page-sub">This notifies your agency's managers immediately and opens an escalation</div></div></div>
-      <div class="card" style="max-width:520px">
-        <label>Subject</label><input id="r_subject" placeholder="e.g. Temp did not show up" />
-        <label>Priority</label>
-        <select id="r_priority"><option value="urgent">Urgent</option><option value="critical">Critical</option></select>
-        <label>Details</label><textarea id="r_message" rows="5" placeholder="What happened?"></textarea>
-        <button class="btn btn-danger btn-block" style="margin-top:16px" onclick="raiseIssue()">Send to Agency</button>
-        <div id="raiseMsg"></div>
+    <div id="tab-issues" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Issues &amp; Incidents</div><div class="page-sub">Monitor reported site disputes, safety incidents, or delays</div></div>
+        <button class="btn btn-primary" onclick="openReportIssueModal()">+ Report New Issue</button>
+      </div>
+      <div class="dash-layout">
+        <div class="card"><div id="issuesTable"></div></div>
+        <div class="card" id="issueDetail"><div class="empty">Select an issue to view details.</div></div>
+      </div>
+    </div>
+
+    <div id="tab-replacements" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Replacement Center</div><div class="page-sub">Request swift alternative labor deployment for no-shows or call-offs</div></div>
+        <button class="btn btn-primary" onclick="openReplacementModal()">+ Initiate Replacement Request</button>
+      </div>
+      <div class="card"><div id="replacementsTable"></div></div>
+    </div>
+
+    <div id="tab-reports" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Reports</div><div class="page-sub">Performance reports and labor summaries</div></div>
+        <button class="btn btn-outline" onclick="exportReportCsv()">↓ Export CSV</button>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <label style="margin:0">From <input type="date" id="repFrom" onchange="loadReports()" style="width:auto;display:inline-block" /></label>
+        <label style="margin:0">To <input type="date" id="repTo" onchange="loadReports()" style="width:auto;display:inline-block" /></label>
+      </div>
+      <div class="stat-grid" id="reportStats"></div>
+    </div>
+
+    <div id="tab-settings" style="display:none">
+      <div class="page-head"><div><div class="page-title">Portal Settings</div><div class="page-sub">Manage company profile, sites, and supervisors</div></div></div>
+      <div class="dash-layout">
+        <div>
+          <div class="card">
+            <h3 style="margin-top:0">Company Profile</h3>
+            <label>Corporate Account Name</label><input id="setCompanyName" />
+            <label>Contact Email</label><input id="setContactEmail" />
+            <label>Contact Phone</label><input id="setContactPhone" />
+            <button class="btn btn-primary" style="margin-top:12px" onclick="saveOrgSettings()">Save Profile</button>
+            <div id="settingsMsg"></div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <h3 style="margin-top:0">Active Sites</h3>
+            <div id="locationsList"></div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <h3 style="margin-top:0">Designated Supervisors</h3>
+            <div id="supervisorsList"></div>
+            <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="openInviteSupervisorModal()">+ Add Supervisor</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Notification Criteria</h3>
+          <div id="notificationPrefs"></div>
+          <button class="btn btn-primary" style="margin-top:12px" onclick="saveNotificationPrefs()">Save Settings</button>
+        </div>
       </div>
     </div>
 
@@ -63,16 +153,52 @@
 <script>
 let CURRENT_USER = null;
 let ACTIVE_CONV = null;
+let SELECTED_ISSUE = null;
 
 async function boot() {
-  CURRENT_USER = await requireSession(['client_hr']);
+  CURRENT_USER = await requireClientSession();
   if (!CURRENT_USER) return;
   document.getElementById('uName').textContent = CURRENT_USER.full_name;
   document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
-  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => switchTab(el.dataset.tab)));
+  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => { switchTab(el.dataset.tab); toggleMobileNav(false); }));
   await loadAgencies();
   await Promise.all([loadOverview(), loadShifts(), loadConversations()]);
   setInterval(() => { loadOverview(); loadConversations(); }, 20000);
+}
+
+async function requireClientSession() {
+  try {
+    const { user } = await api('/auth/me');
+    if (user.role !== 'client_hr') { window.location.href = '/client-login.html'; return null; }
+    return user;
+  } catch (e) {
+    window.location.href = '/client-login.html';
+    return null;
+  }
+}
+
+function toggleMobileNav(force) {
+  const sidebar = document.getElementById('sidebarNav');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const open = typeof force === 'boolean' ? force : !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', open);
+  backdrop.classList.toggle('open', open);
+}
+
+const TAB_TITLES = { overview: 'Dashboard', workers: 'Workers', shifts: 'Shifts', attendance: 'Attendance', messages: 'Messages', issues: 'Issues', replacements: 'Replacements', reports: 'Reports', settings: 'Settings' };
+const TABS = Object.keys(TAB_TITLES);
+
+function switchTab(tab) {
+  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
+  TABS.forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
+  const mt = document.getElementById('mtTitle');
+  if (mt) mt.textContent = TAB_TITLES[tab] || 'Client Hub';
+  if (tab === 'workers') loadWorkers();
+  if (tab === 'attendance') loadAttendance();
+  if (tab === 'issues') loadIssues();
+  if (tab === 'replacements') loadReplacements();
+  if (tab === 'reports') loadReports();
+  if (tab === 'settings') loadSettings();
 }
 
 async function loadAgencies() {
@@ -125,11 +251,7 @@ async function submitConnectAgency() {
   } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
 }
 
-function switchTab(tab) {
-  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
-  ['overview', 'shifts', 'messages', 'raise'].forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
-}
-
+// ===== Overview =====
 async function loadOverview() {
   const o = await api('/client/overview');
   if (o.noAgencyConnected) {
@@ -146,14 +268,61 @@ async function loadOverview() {
     <div class="stat-card ${o.openEscalations ? 'warn' : ''}"><div class="label">Open Issues</div><div class="value">${o.openEscalations}</div></div>`;
 }
 
+// ===== Workers =====
+async function loadWorkers() {
+  const { workers } = await api('/client/workers');
+  document.getElementById('workersTable').innerHTML = workers.length ? `
+    <table><thead><tr><th>Worker</th><th>Contact</th><th>Last Shift</th><th>Status</th><th>Total Shifts</th></tr></thead>
+    <tbody>${workers.map((w) => `<tr>
+      <td>${w.full_name}</td>
+      <td>${w.email || '—'}${w.phone ? '<br/><span style="color:var(--ink-soft);font-size:12px">' + w.phone + '</span>' : ''}</td>
+      <td>${fmtDate(w.last_shift_date)}</td>
+      <td>${w.last_status ? pill(w.last_status) : '—'}</td>
+      <td>${w.total_shifts}</td>
+    </tr>`).join('')}</tbody></table>` : `<div class="empty">No workers on record yet.</div>`;
+}
+
+// ===== Shifts =====
 async function loadShifts() {
-  const { shifts } = await api('/client/shifts');
+  const date = document.getElementById('shiftDateFilter') ? document.getElementById('shiftDateFilter').value : '';
+  const { shifts } = await api('/client/shifts' + (date ? `?date=${date}` : ''));
   document.getElementById('shiftsTable').innerHTML = shifts.length ? `
     <table><thead><tr><th>Temp</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
     <tbody>${shifts.map((s) => `<tr><td>${s.temp_name || 'Unassigned'}</td><td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty">No shifts on record yet.</div>`;
 }
 
+// ===== Attendance =====
+async function loadAttendance() {
+  const from = document.getElementById('attFrom').value;
+  const to = document.getElementById('attTo').value;
+  const status = document.getElementById('attStatusFilter').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  if (status) params.set('status', status);
+  const { shifts, stats } = await api('/client/attendance?' + params.toString());
+  document.getElementById('attendanceStats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Shifts</div><div class="value">${stats.total}</div></div>
+    <div class="stat-card good"><div class="label">Completed</div><div class="value">${stats.completed}</div></div>
+    <div class="stat-card ${stats.noShow ? 'bad' : ''}"><div class="label">No-Shows</div><div class="value">${stats.noShow}</div></div>
+    <div class="stat-card"><div class="label">In Progress</div><div class="value">${stats.inProgress}</div></div>`;
+  document.getElementById('attendanceTable').innerHTML = shifts.length ? `
+    <table><thead><tr><th>Worker</th><th>Date</th><th>Scheduled</th><th>Status</th><th></th></tr></thead>
+    <tbody>${shifts.map((s) => `<tr>
+      <td>${s.temp_name || 'Unassigned'}</td>
+      <td>${fmtDate(s.shift_date)}</td>
+      <td>${s.start_time}–${s.end_time}</td>
+      <td>${pill(s.status)}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="disputeShift('${s.id}','${(s.temp_name || 'Unassigned').replace(/'/g, "\\'")}','${s.shift_date}')">Dispute</button></td>
+    </tr>`).join('')}</tbody></table>` : `<div class="empty">No attendance records for this range.</div>`;
+}
+
+function disputeShift(shiftId, tempName, shiftDate) {
+  openReportIssueModal(`Attendance dispute — ${tempName} (${shiftDate})`, shiftId);
+}
+
+// ===== Messages =====
 async function loadConversations() {
   const { conversations } = await api('/conversations');
   document.getElementById('convList').innerHTML = conversations.length ? conversations.map((c) => `
@@ -183,18 +352,225 @@ async function sendReply(id) {
   openConv(id);
 }
 
-async function raiseIssue() {
+// ===== Issues =====
+async function loadIssues() {
+  const { conversations } = await api('/conversations');
+  const issues = conversations.filter((c) => c.type === 'escalation');
+  document.getElementById('issuesTable').innerHTML = issues.length ? `
+    <table><thead><tr><th>Subject</th><th>Priority</th><th>Status</th><th>Reported</th></tr></thead>
+    <tbody>${issues.map((c) => `<tr style="cursor:pointer" onclick="selectIssue('${c.id}')">
+      <td>${c.subject || 'Issue'}</td><td>${pill(c.priority || 'urgent')}</td><td>${pill(c.status)}</td><td>${fmtDateTime(c.created_at)}</td>
+    </tr>`).join('')}</tbody></table>` : `<div class="empty">No issues reported yet.</div>`;
+}
+
+async function selectIssue(id) {
+  SELECTED_ISSUE = id;
+  const { conversation, messages } = await api(`/conversations/${id}`);
+  document.getElementById('issueDetail').innerHTML = `
+    <h3 style="margin-top:0">${conversation.subject || 'Issue'}</h3>
+    <div style="margin-bottom:10px">${pill(conversation.priority || 'urgent')} ${pill(conversation.status)}</div>
+    <div class="conv-messages" style="max-height:340px">${messages.map((m) => `
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+    <div class="conv-input"><input id="issueReplyBody" placeholder="Add an update…" onkeydown="if(event.key==='Enter')sendIssueReply('${id}')"/><button class="btn btn-primary" onclick="sendIssueReply('${id}')">Send</button></div>`;
+}
+async function sendIssueReply(id) {
+  const input = document.getElementById('issueReplyBody');
+  const body = input.value.trim();
+  if (!body) return;
+  input.value = '';
+  await api(`/conversations/${id}/messages`, { method: 'POST', body: { body } });
+  selectIssue(id);
+}
+
+function openReportIssueModal(prefillSubject, shiftId) {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Report New Issue</h3>
+        <label>Subject</label><input id="r_subject" value="${prefillSubject ? prefillSubject.replace(/"/g, '&quot;') : ''}" placeholder="e.g. No show / sub needed" />
+        <label>Priority</label>
+        <select id="r_priority"><option value="urgent">Urgent</option><option value="critical">Critical</option></select>
+        <label>Details</label><textarea id="r_message" rows="5" placeholder="What happened?"></textarea>
+        <div id="raiseMsg"></div>
+        <button class="btn btn-danger btn-block" style="margin-top:16px" onclick="raiseIssue('${shiftId || ''}')">Send to Agency</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function raiseIssue(shiftId) {
   const subject = document.getElementById('r_subject').value.trim();
   const message = document.getElementById('r_message').value.trim();
   const priority = document.getElementById('r_priority').value;
   const msgEl = document.getElementById('raiseMsg');
   if (!subject || !message) { msgEl.innerHTML = `<div class="err">Subject and details are required</div>`; return; }
   try {
-    await api('/client/raise-issue', { method: 'POST', body: { subject, message, priority } });
-    msgEl.innerHTML = `<div class="ok">Sent — your agency has been notified.</div>`;
-    document.getElementById('r_subject').value = ''; document.getElementById('r_message').value = '';
-    loadOverview(); loadConversations();
+    await api('/client/raise-issue', { method: 'POST', body: { subject, message, priority, shiftId: shiftId || undefined } });
+    document.querySelector('.modal-backdrop').remove();
+    toast('Sent — your agency has been notified');
+    loadOverview(); loadConversations(); loadIssues();
   } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+}
+
+// ===== Replacements =====
+async function loadReplacements() {
+  const { requests } = await api('/client/replacement-requests');
+  document.getElementById('replacementsTable').innerHTML = requests.length ? `
+    <table><thead><tr><th>Role</th><th>Original</th><th>Shift</th><th>Status</th><th>Requested</th></tr></thead>
+    <tbody>${requests.map((r) => `<tr>
+      <td>${r.job_title || '—'}</td>
+      <td>${r.original_temp_name || '—'}</td>
+      <td>${fmtDate(r.shift_date)} ${r.start_time}–${r.end_time}</td>
+      <td>${pill(r.status)}</td>
+      <td>${fmtDateTime(r.created_at)}</td>
+    </tr>`).join('')}</tbody></table>` : `<div class="empty">No replacement requests yet.</div>`;
+}
+
+async function openReplacementModal() {
+  const today = new Date().toISOString().slice(0, 10);
+  const { shifts } = await api(`/client/shifts?date=${today}`);
+  const options = shifts.map((s) => `<option value="${s.id}">${s.temp_name || 'Unassigned'} — ${s.start_time}-${s.end_time}</option>`).join('');
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Initiate Replacement Request</h3>
+        <label>Shift (today)</label>
+        <select id="rep_shift">${options || '<option value="">No shifts scheduled today</option>'}</select>
+        <label>Reason</label>
+        <textarea id="rep_reason" rows="4" placeholder="e.g. No-show, called off sick…"></textarea>
+        <div id="repMsg"></div>
+        <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitReplacementRequest()">Request Replacement</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitReplacementRequest() {
+  const shiftId = document.getElementById('rep_shift').value;
+  const reason = document.getElementById('rep_reason').value.trim();
+  const msgEl = document.getElementById('repMsg');
+  if (!shiftId) { msgEl.innerHTML = `<div class="err">Select a shift</div>`; return; }
+  try {
+    await api('/client/replacement-requests', { method: 'POST', body: { shiftId, reason } });
+    document.querySelector('.modal-backdrop').remove();
+    toast('Replacement search started');
+    loadReplacements();
+  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+}
+
+// ===== Reports =====
+let LAST_REPORT = null;
+async function loadReports() {
+  const from = document.getElementById('repFrom').value;
+  const to = document.getElementById('repTo').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const data = await api('/client/reports?' + params.toString());
+  LAST_REPORT = data;
+  document.getElementById('reportStats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Shifts</div><div class="value">${data.totalShifts}</div></div>
+    <div class="stat-card good"><div class="label">Fill Rate</div><div class="value">${data.fillRate}%</div></div>
+    <div class="stat-card ${data.noShows ? 'bad' : ''}"><div class="label">No-Shows</div><div class="value">${data.noShows}</div></div>
+    <div class="stat-card"><div class="label">Escalations</div><div class="value">${data.escalationCount}</div></div>`;
+}
+function exportReportCsv() {
+  if (!LAST_REPORT) return;
+  const rows = [['Metric', 'Value'], ['Total Shifts', LAST_REPORT.totalShifts], ['Completed', LAST_REPORT.completed], ['No-Shows', LAST_REPORT.noShows], ['Fill Rate %', LAST_REPORT.fillRate], ['Escalations', LAST_REPORT.escalationCount]];
+  const csv = rows.map((r) => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'twanova-client-report.csv';
+  a.click();
+}
+
+// ===== Settings =====
+const NOTIF_LABELS = {
+  noShowWarning: ['Subcontractor No-Show Warning', 'Alert immediately if worker fails check-in within 15 minutes of shift start.'],
+  lateArrivalAlerts: ['Late Arrival Alerts', 'Notify for arrivals delayed by over 10 minutes.'],
+  replacementsMatched: ['Replacements Matched', 'Notify once a cover subcontractor accepts.'],
+  dailyHoursSummary: ['Daily Hours Summary', 'Receive a daily summary of hours worked.']
+};
+
+async function loadSettings() {
+  const { org, notificationPrefs } = await api('/client/settings');
+  document.getElementById('setCompanyName').value = (org && org.company_name) || '';
+  document.getElementById('setContactEmail').value = (org && org.contact_email) || '';
+  document.getElementById('setContactPhone').value = (org && org.contact_phone) || '';
+
+  document.getElementById('notificationPrefs').innerHTML = Object.entries(NOTIF_LABELS).map(([key, [label, desc]]) => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><div style="font-weight:600;font-size:13.5px">${label}</div><div style="font-size:12px;color:var(--ink-soft)">${desc}</div></div>
+      <label style="margin:0"><input type="checkbox" data-pref="${key}" ${notificationPrefs[key] ? 'checked' : ''} /></label>
+    </div>`).join('');
+
+  const { locations } = await api('/client/locations');
+  document.getElementById('locationsList').innerHTML = locations.length ? locations.map((l) => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div style="font-weight:600">${l.site_name || l.agencyName}</div>
+      <div style="font-size:12px;color:var(--ink-soft)">${l.agencyName} · ${pill(l.status)}</div>
+    </div>`).join('') : `<div class="empty">No sites on record.</div>`;
+
+  const { supervisors } = await api('/client/supervisors');
+  document.getElementById('supervisorsList').innerHTML = supervisors.length ? supervisors.map((s) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><div style="font-weight:600">${s.full_name}</div><div style="font-size:12px;color:var(--ink-soft)">${s.email}</div></div>
+      ${s.active ? '<span class="pill pill-active">active</span>' : `<button class="btn btn-outline btn-sm" onclick="deactivateSupervisor('${s.id}')">Deactivate</button>`}
+    </div>`).join('') : `<div class="empty">No additional supervisors yet.</div>`;
+}
+
+async function saveOrgSettings() {
+  const companyName = document.getElementById('setCompanyName').value.trim();
+  const contactEmail = document.getElementById('setContactEmail').value.trim();
+  const contactPhone = document.getElementById('setContactPhone').value.trim();
+  const msgEl = document.getElementById('settingsMsg');
+  try {
+    await api('/client/settings', { method: 'POST', body: { companyName, contactEmail, contactPhone } });
+    msgEl.innerHTML = `<div class="ok">Saved.</div>`;
+    toast('Company profile saved');
+  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+}
+
+async function saveNotificationPrefs() {
+  const prefs = {};
+  document.querySelectorAll('#notificationPrefs input[data-pref]').forEach((el) => { prefs[el.dataset.pref] = el.checked; });
+  await api('/client/settings', { method: 'POST', body: { notificationPrefs: prefs } });
+  toast('Notification settings saved');
+}
+
+function openInviteSupervisorModal() {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Add Supervisor</h3>
+        <label>Full Name</label><input id="sup_name" />
+        <label>Email</label><input id="sup_email" type="email" />
+        <label>Phone</label><input id="sup_phone" />
+        <div id="supMsg"></div>
+        <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitInviteSupervisor()">Send Invite</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitInviteSupervisor() {
+  const fullName = document.getElementById('sup_name').value.trim();
+  const email = document.getElementById('sup_email').value.trim();
+  const phone = document.getElementById('sup_phone').value.trim();
+  const msgEl = document.getElementById('supMsg');
+  if (!fullName || !email) { msgEl.innerHTML = `<div class="err">Name and email are required</div>`; return; }
+  try {
+    const { tempPassword } = await api('/client/supervisors/invite', { method: 'POST', body: { fullName, email, phone } });
+    msgEl.innerHTML = `<div class="ok">Account created. Temporary password: <input readonly value="${tempPassword}" onclick="this.select()" style="margin-top:6px" /></div>`;
+    loadSettings();
+  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+}
+async function deactivateSupervisor(id) {
+  await api(`/client/supervisors/${id}/deactivate`, { method: 'POST' });
+  toast('Supervisor deactivated');
+  loadSettings();
 }
 
 boot();

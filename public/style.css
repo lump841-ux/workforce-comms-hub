@@ -218,7 +218,7 @@ tr:last-child td{border-bottom:none}
 .split-form-inner .pw-wrap input{padding-right:38px}
 .split-form-inner .pw-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--ink-soft);cursor:pointer;font-size:15px}
 .keep-signed{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13.5px;color:var(--ink-soft)}
-@media (max-width:860px){.split-auth{flex-direction:column;min-height:auto}.split-hero{flex:none;min-height:220px;padding:28px 24px;justify-content:flex-end}.split-hero .sh-headline{font-size:26px;margin-top:0}.split-hero .sh-sub{display:none}.split-hero .sh-foot{display:none}.split-form-pane{padding:32px 24px}}
+@media (max-width:860px){.split-auth{flex-direction:column;min-height:100vh}.split-hero{flex:none;min-height:220px;padding:28px 24px;justify-content:flex-end}.split-hero .sh-headline{font-size:26px;margin-top:0}.split-hero .sh-sub{display:none}.split-hero .sh-foot{display:none}.split-form-pane{flex:1;padding:32px 24px}}
 
 /* Marketing-style create-account page */
 .mk-nav{display:flex;align-items:center;justify-content:space-between;padding:16px 40px;border-bottom:1px solid var(--line)}

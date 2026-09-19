@@ -201,6 +201,7 @@ tr:last-child td{border-bottom:none}
 .split-hero::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 15% 25%, rgba(255,255,255,.12) 0, transparent 2px),radial-gradient(circle at 65% 15%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 40% 60%, rgba(255,255,255,.08) 0, transparent 2px),radial-gradient(circle at 80% 70%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 25% 85%, rgba(255,255,255,.08) 0, transparent 2px);background-size:400px 400px;opacity:.6}
 .split-hero .sh-brand{display:flex;align-items:center;gap:10px;position:relative;z-index:1}
 .split-hero .sh-brand .mark{width:36px;height:36px;border-radius:9px;background:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800}
+.split-hero .sh-brand .mark-img{height:34px;width:auto;background:#fff;border-radius:8px;padding:3px}
 .split-hero .sh-brand .name{font-weight:800;font-size:18px}
 .split-hero .sh-headline{font-size:44px;font-weight:800;line-height:1.1;margin-top:auto;position:relative;z-index:1;max-width:480px}
 .split-hero .sh-sub{font-size:15px;color:#c7d7ec;line-height:1.6;margin-top:18px;max-width:440px;position:relative;z-index:1}
@@ -217,7 +218,7 @@ tr:last-child td{border-bottom:none}
 .split-form-inner .pw-wrap input{padding-right:38px}
 .split-form-inner .pw-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--ink-soft);cursor:pointer;font-size:15px}
 .keep-signed{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13.5px;color:var(--ink-soft)}
-@media (max-width:860px){.split-hero{display:none}.split-form-pane{padding:32px 24px}}
+@media (max-width:860px){.split-auth{flex-direction:column;min-height:auto}.split-hero{flex:none;min-height:220px;padding:28px 24px;justify-content:flex-end}.split-hero .sh-headline{font-size:26px;margin-top:0}.split-hero .sh-sub{display:none}.split-hero .sh-foot{display:none}.split-form-pane{padding:32px 24px}}
 
 /* Marketing-style create-account page */
 .mk-nav{display:flex;align-items:center;justify-content:space-between;padding:16px 40px;border-bottom:1px solid var(--line)}

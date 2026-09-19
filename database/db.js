@@ -26,6 +26,11 @@ function migrate() {
     addColumnIfMissing('client_orgs', 'contact_email', 'TEXT');
     addColumnIfMissing('client_orgs', 'contact_phone', 'TEXT');
     addColumnIfMissing('client_orgs', 'notification_prefs', 'TEXT');
+    addColumnIfMissing('shifts', 'en_route_at', 'TEXT');
+    addColumnIfMissing('shifts', 'running_late_at', 'TEXT');
+    addColumnIfMissing('shifts', 'cancel_reason_category', 'TEXT');
+    addColumnIfMissing('shifts', 'cancel_reason', 'TEXT');
+    addColumnIfMissing('users', 'language_pref', "TEXT NOT NULL DEFAULT 'en'");
   } catch (e) {
     console.error('Migration warning:', e.message);
   }

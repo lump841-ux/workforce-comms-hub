@@ -7,23 +7,43 @@
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
+<div class="mobile-topbar">
+  <button class="hamburger" onclick="toggleMobileNav()" aria-label="Menu">☰</button>
+  <img src="../brand-logo-compact.png" alt="Twanova" />
+  <div class="mt-title" id="mtTitle">Dashboard</div>
+</div>
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleMobileNav(false)"></div>
 <div class="app-shell">
-  <div class="sidebar">
-    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Temp</div></div></div>
-    <a class="navlink active" data-tab="shifts">📅 My Shifts</a>
-    <a class="navlink" data-tab="open">🟢 Open Shifts <span id="openBadge" class="badge" style="display:none">0</span></a>
-    <a class="navlink" data-tab="messages">💬 Messages <span id="msgBadge" class="badge" style="display:none">0</span></a>
-    <a class="navlink" data-tab="notifications">🔔 Notifications <span id="notifBadge" class="badge" style="display:none">0</span></a>
+  <div class="sidebar" id="sidebarNav">
+    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Worker Hub</div></div></div>
+    <a class="navlink active" data-tab="today" data-icon="🏠"><span class="nl-icon">🏠</span><span class="nl-label">Dashboard</span></a>
+    <a class="navlink" data-tab="shifts" data-icon="📅"><span class="nl-icon">📅</span><span class="nl-label">My Shifts</span></a>
+    <a class="navlink" data-tab="open" data-icon="🟢"><span class="nl-icon">🟢</span><span class="nl-label">Open Shifts <span id="openBadge" class="badge" style="display:none">0</span></span></a>
+    <a class="navlink" data-tab="messages" data-icon="💬"><span class="nl-icon">💬</span><span class="nl-label">Messages <span id="msgBadge" class="badge" style="display:none">0</span></span></a>
+    <a class="navlink" data-tab="issues" data-icon="⚠️"><span class="nl-icon">⚠️</span><span class="nl-label">Report Issue</span></a>
+    <a class="navlink" data-tab="photos" data-icon="📷"><span class="nl-icon">📷</span><span class="nl-label">Photo Proof</span></a>
+    <a class="navlink" data-tab="notifications" data-icon="🔔"><span class="nl-icon">🔔</span><span class="nl-label">Notifications <span id="notifBadge" class="badge" style="display:none">0</span></span></a>
+    <a class="navlink" data-tab="profile" data-icon="👤"><span class="nl-icon">👤</span><span class="nl-label">Profile</span></a>
     <div class="sidebar-foot">
-      <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role">Temp</div></div></div>
+      <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role">Worker</div></div></div>
       <button class="logout-btn" onclick="logout()">Sign out</button>
     </div>
   </div>
   <div class="main">
-    <div id="tab-shifts">
+
+    <div id="tab-today">
+      <div class="page-head"><div><div class="page-title" id="todayTitle">Today's Shift</div><div class="page-sub">Your next assignment and quick actions</div></div></div>
+      <div class="card" id="todayCard"><div class="empty">Loading…</div></div>
+      <div class="card" id="breakCard" style="display:none;margin-top:16px">
+        <h3 style="margin-top:0">Break</h3>
+        <div id="breakStatus"></div>
+      </div>
+    </div>
+
+    <div id="tab-shifts" style="display:none">
       <div class="page-head"><div><div class="page-title">My Shifts</div><div class="page-sub">Confirm, clock in, and clock out of your assignments</div></div></div>
       <div class="card"><div class="card-head"><h3>Upcoming</h3></div><div id="upcomingShifts"></div></div>
-      <div class="card"><div class="card-head"><h3>History</h3></div><div id="historyShifts"></div></div>
+      <div class="card" style="margin-top:16px"><div class="card-head"><h3>History</h3></div><div id="historyShifts"></div></div>
     </div>
 
     <div id="tab-open" style="display:none">
@@ -41,12 +61,65 @@
       </div>
     </div>
 
+    <div id="tab-issues" style="display:none">
+      <div class="page-head"><div><div class="page-title">Report an Issue</div><div class="page-sub">Let your agency know about a problem on site</div></div></div>
+      <div class="card" style="max-width:560px">
+        <label>Related shift (optional)</label>
+        <select id="issueShift"><option value="">Not shift-specific</option></select>
+        <label>Category</label>
+        <select id="issueCategory">
+          <option value="safety">Safety concern</option>
+          <option value="site_access">Site access / can't get in</option>
+          <option value="equipment">Missing equipment / supplies</option>
+          <option value="conduct">Client or coworker conduct</option>
+          <option value="pay">Pay or hours discrepancy</option>
+          <option value="other">Other</option>
+        </select>
+        <label>What's going on?</label>
+        <textarea id="issueDescription" rows="5" placeholder="Describe the issue…"></textarea>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitIssue()">Submit to Agency</button>
+        <div id="issueMsg"></div>
+      </div>
+    </div>
+
+    <div id="tab-photos" style="display:none">
+      <div class="page-head"><div><div class="page-title">Photo Proof</div><div class="page-sub">Upload proof-of-work photos tied to a shift</div></div></div>
+      <div class="card" style="max-width:560px">
+        <label>Shift</label>
+        <select id="photoShift"></select>
+        <label>Photo</label>
+        <input type="file" id="photoFile" accept="image/*" />
+        <label>Caption (optional)</label>
+        <input id="photoCaption" placeholder="e.g. Job site cleared" />
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitPhoto()">Upload</button>
+        <div id="photoMsg"></div>
+      </div>
+      <div class="card" style="margin-top:16px" id="photoGalleryCard" style="display:none">
+        <h3 style="margin-top:0">Uploaded for this shift</h3>
+        <div id="photoGallery" class="empty">Pick a shift above to see its photos.</div>
+      </div>
+    </div>
+
     <div id="tab-notifications" style="display:none">
       <div class="page-head"><div><div class="page-title">Notifications</div></div>
         <button class="btn btn-outline btn-sm" onclick="markAllRead()">Mark all read</button>
       </div>
       <div class="card"><div id="notifList"></div></div>
     </div>
+
+    <div id="tab-profile" style="display:none">
+      <div class="page-head"><div><div class="page-title">Profile</div><div class="page-sub">Your contact info and language preference</div></div></div>
+      <div class="card" style="max-width:520px">
+        <label>Full Name</label><input id="profName" />
+        <label>Phone</label><input id="profPhone" />
+        <label>Email</label><input id="profEmail" disabled style="opacity:.6" />
+        <label>Language</label>
+        <select id="profLang"><option value="en">English</option><option value="es">Español</option></select>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="saveProfile()">Save</button>
+        <div id="profMsg"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -54,26 +127,193 @@
 <script>
 let CURRENT_USER = null;
 let ACTIVE_CONV = null;
+let ALL_SHIFTS = { upcoming: [], history: [] };
 
 async function boot() {
   CURRENT_USER = await requireSession(['temp']);
   if (!CURRENT_USER) return;
   document.getElementById('uName').textContent = CURRENT_USER.full_name;
   document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
+  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => { switchTab(el.dataset.tab); toggleMobileNav(false); }));
 
-  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => switchTab(el.dataset.tab)));
-
-  await Promise.all([loadShifts(), loadOpenShifts(), loadConversations(), loadNotifications()]);
+  await Promise.all([loadShifts(), loadOpenShifts(), loadConversations(), loadNotifications(), loadProfile()]);
   setInterval(() => { loadOpenShifts(); loadNotifications(); loadConversations(); }, 20000);
 }
 
-function switchTab(tab) {
-  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
-  ['shifts', 'open', 'messages', 'notifications'].forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
+function toggleMobileNav(force) {
+  const sidebar = document.getElementById('sidebarNav');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const open = typeof force === 'boolean' ? force : !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', open);
+  backdrop.classList.toggle('open', open);
 }
 
+const TAB_TITLES = { today: 'Dashboard', shifts: 'My Shifts', open: 'Open Shifts', messages: 'Messages', issues: 'Report Issue', photos: 'Photo Proof', notifications: 'Notifications', profile: 'Profile' };
+const TABS = Object.keys(TAB_TITLES);
+
+function switchTab(tab) {
+  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
+  TABS.forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
+  const mt = document.getElementById('mtTitle');
+  if (mt) mt.textContent = TAB_TITLES[tab] || 'Worker Hub';
+  if (tab === 'photos') populatePhotoShiftPicker();
+  if (tab === 'issues') populateIssueShiftPicker();
+}
+
+// ============ TODAY / NEXT SHIFT ============
 async function loadShifts() {
   const { upcoming, history } = await api('/temp/shifts');
+  ALL_SHIFTS = { upcoming, history };
+  renderToday();
+  renderShiftTables();
+}
+
+function renderToday() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const shift = ALL_SHIFTS.upcoming.find((s) => s.shift_date === todayStr) || ALL_SHIFTS.upcoming[0];
+  const titleEl = document.getElementById('todayTitle');
+  const card = document.getElementById('todayCard');
+  const breakCard = document.getElementById('breakCard');
+
+  if (!shift) {
+    titleEl.textContent = 'No Upcoming Shifts';
+    card.innerHTML = `<div class="empty">You don't have any scheduled shifts right now. Check Open Shifts for coverage opportunities.</div>`;
+    breakCard.style.display = 'none';
+    return;
+  }
+
+  titleEl.textContent = shift.shift_date === todayStr ? "Today's Shift" : 'Next Shift';
+
+  const isToday = shift.shift_date === todayStr;
+  let actions = '';
+  if (shift.status === 'scheduled') {
+    actions += `<button class="btn btn-primary btn-sm" onclick="confirmShift('${shift.id}')">Confirm Shift</button>`;
+  }
+  if (shift.status === 'confirmed' && isToday) {
+    actions += `<button class="btn btn-outline btn-sm" onclick="onMyWay('${shift.id}')" ${shift.en_route_at ? 'disabled' : ''}>${shift.en_route_at ? 'On my way ✓' : 'On My Way'}</button>`;
+    actions += `<button class="btn btn-outline btn-sm" onclick="openRunningLateModal('${shift.id}')">Running Late</button>`;
+    actions += `<button class="btn btn-primary btn-sm" onclick="clockIn('${shift.id}')">Clock In</button>`;
+  }
+  if (shift.status === 'in_progress') {
+    actions += `<button class="btn btn-outline btn-sm" onclick="switchTab('photos')">Upload Photo Proof</button>`;
+    actions += `<button class="btn btn-primary btn-sm" onclick="clockOut('${shift.id}')">Clock Out</button>`;
+  }
+  if (['scheduled', 'confirmed'].includes(shift.status)) {
+    actions += `<button class="btn btn-outline btn-sm" onclick="openCantMakeItModal('${shift.id}')" style="border-color:var(--danger,#c0392b);color:var(--danger,#c0392b)">Can't Make It</button>`;
+  }
+
+  card.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:18px;font-weight:600">${shift.job_title}</div>
+        <div style="color:var(--ink-soft);margin-top:2px">${shift.company_name}${shift.site_name ? ' · ' + shift.site_name : ''}</div>
+        <div style="color:var(--ink-soft);margin-top:2px">${fmtDate(shift.shift_date)} · ${shift.start_time}–${shift.end_time}</div>
+        ${shift.running_late_at ? `<div style="color:#b8860b;margin-top:4px;font-size:13px">⚠ You reported running late</div>` : ''}
+      </div>
+      <div>${pill(shift.status)}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">${actions || '<span style="color:var(--ink-soft);font-size:13px">No actions available right now.</span>'}</div>
+  `;
+
+  if (shift.status === 'in_progress') {
+    breakCard.style.display = '';
+    loadBreakStatus(shift.id);
+  } else {
+    breakCard.style.display = 'none';
+  }
+}
+
+async function loadBreakStatus(shiftId) {
+  const { breaks } = await api(`/temp/shifts/${shiftId}/breaks`);
+  const open = breaks.find((b) => !b.ended_at);
+  document.getElementById('breakStatus').innerHTML = open
+    ? `<div>On a ${open.break_type} break since ${fmtDateTime(open.started_at)}.</div>
+       <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="endBreak('${shiftId}')">End Break</button>`
+    : `<div style="display:flex;gap:8px;flex-wrap:wrap">
+         <button class="btn btn-outline btn-sm" onclick="startBreak('${shiftId}','short')">Start Short Break</button>
+         <button class="btn btn-outline btn-sm" onclick="startBreak('${shiftId}','lunch')">Start Lunch Break</button>
+       </div>`;
+}
+
+async function startBreak(shiftId, type) {
+  try {
+    await api(`/temp/shifts/${shiftId}/breaks/start`, { method: 'POST', body: { breakType: type } });
+    toast('Break started');
+    loadBreakStatus(shiftId);
+  } catch (e) { toast(e.message, true); }
+}
+async function endBreak(shiftId) {
+  await api(`/temp/shifts/${shiftId}/breaks/end`, { method: 'POST' });
+  toast('Break ended');
+  loadBreakStatus(shiftId);
+}
+
+async function onMyWay(id) {
+  await api(`/temp/shifts/${id}/on-my-way`, { method: 'POST' });
+  toast("Manager notified you're on your way");
+  loadShifts();
+}
+
+function openRunningLateModal(shiftId) {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Running Late</h3>
+        <label>About how many minutes late?</label>
+        <input type="number" id="lateMinutes" min="1" placeholder="15" />
+        <label>Reason (optional)</label>
+        <textarea id="lateReason" rows="3" placeholder="Traffic, transit delay, etc."></textarea>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitRunningLate('${shiftId}')">Notify Manager</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitRunningLate(shiftId) {
+  const minutesLate = document.getElementById('lateMinutes').value || null;
+  const reason = document.getElementById('lateReason').value.trim() || null;
+  await api(`/temp/shifts/${shiftId}/running-late`, { method: 'POST', body: { minutesLate, reason } });
+  document.querySelector('.modal-backdrop').remove();
+  toast('Manager notified');
+  loadShifts();
+}
+
+function openCantMakeItModal(shiftId) {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Can't Make This Shift</h3>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--ink-soft)">This cancels your shift and immediately starts a search for a replacement.</p>
+        <label>Reason category</label>
+        <select id="cantMakeCategory">
+          <option value="illness">Illness</option>
+          <option value="emergency">Family / personal emergency</option>
+          <option value="transportation">Transportation issue</option>
+          <option value="scheduling_conflict">Scheduling conflict</option>
+          <option value="other">Other</option>
+        </select>
+        <label>Details (optional)</label>
+        <textarea id="cantMakeReason" rows="3"></textarea>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitCantMakeIt('${shiftId}')">Confirm Cancellation</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitCantMakeIt(shiftId) {
+  const category = document.getElementById('cantMakeCategory').value;
+  const reason = document.getElementById('cantMakeReason').value.trim() || null;
+  try {
+    await api(`/temp/shifts/${shiftId}/cant-make-it`, { method: 'POST', body: { category, reason } });
+    document.querySelector('.modal-backdrop').remove();
+    toast('Shift cancelled — replacement search started');
+    loadShifts();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ============ SHIFTS TABLE ============
+function renderShiftTables() {
+  const { upcoming, history } = ALL_SHIFTS;
   document.getElementById('upcomingShifts').innerHTML = upcoming.length ? `
     <table><thead><tr><th>Client</th><th>Job</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
     <tbody>${upcoming.map((s) => `
@@ -100,6 +340,7 @@ async function confirmShift(id) { await api(`/temp/shifts/${id}/confirm`, { meth
 async function clockIn(id) { await api(`/temp/shifts/${id}/clock-in`, { method: 'POST' }); toast('Clocked in'); loadShifts(); }
 async function clockOut(id) { await api(`/temp/shifts/${id}/clock-out`, { method: 'POST' }); toast('Clocked out — shift complete'); loadShifts(); }
 
+// ============ OPEN SHIFTS ============
 async function loadOpenShifts() {
   const { openShifts } = await api('/temp/open-shifts');
   const badge = document.getElementById('openBadge');
@@ -130,6 +371,7 @@ async function acceptOpen(reqId) {
 }
 async function declineOpen(reqId) { await api(`/temp/open-shifts/${reqId}/decline`, { method: 'POST' }); loadOpenShifts(); }
 
+// ============ MESSAGES ============
 async function loadConversations() {
   const { conversations } = await api('/conversations');
   const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
@@ -182,6 +424,74 @@ async function sendReply(id) {
   openConv(id);
 }
 
+// ============ ISSUES ============
+function populateIssueShiftPicker() {
+  const sel = document.getElementById('issueShift');
+  const opts = ['<option value="">Not shift-specific</option>'].concat(
+    ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history).map((s) => `<option value="${s.id}">${s.job_title} — ${fmtDate(s.shift_date)} (${s.company_name})</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
+async function submitIssue() {
+  const shiftId = document.getElementById('issueShift').value || null;
+  const category = document.getElementById('issueCategory').value;
+  const description = document.getElementById('issueDescription').value.trim();
+  const msg = document.getElementById('issueMsg');
+  if (!description) { msg.innerHTML = `<div class="err">Please describe the issue.</div>`; return; }
+  try {
+    await api('/temp/issues', { method: 'POST', body: { shiftId, category, description } });
+    msg.innerHTML = `<div class="ok">Reported to your agency.</div>`;
+    document.getElementById('issueDescription').value = '';
+    loadConversations();
+  } catch (e) {
+    msg.innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
+
+// ============ PHOTOS ============
+function populatePhotoShiftPicker() {
+  const sel = document.getElementById('photoShift');
+  const shifts = ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history);
+  sel.innerHTML = shifts.map((s) => `<option value="${s.id}">${s.job_title} — ${fmtDate(s.shift_date)} (${s.company_name})</option>`).join('') || '<option value="">No shifts yet</option>';
+  if (shifts.length) loadPhotoGallery(shifts[0].id);
+  sel.onchange = () => loadPhotoGallery(sel.value);
+}
+
+async function loadPhotoGallery(shiftId) {
+  if (!shiftId) return;
+  const { photos } = await api(`/temp/shifts/${shiftId}/photos`);
+  document.getElementById('photoGallery').innerHTML = photos.length ? `
+    <div style="display:flex;flex-wrap:wrap;gap:10px">${photos.map((p) => `
+      <div style="width:120px">
+        <img src="${p.data_url}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" />
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:4px">${p.caption || ''}</div>
+      </div>`).join('')}</div>` : `<div class="empty">No photos uploaded for this shift yet.</div>`;
+}
+
+function submitPhoto() {
+  const shiftId = document.getElementById('photoShift').value;
+  const file = document.getElementById('photoFile').files[0];
+  const caption = document.getElementById('photoCaption').value.trim() || null;
+  const msg = document.getElementById('photoMsg');
+  if (!shiftId) { msg.innerHTML = `<div class="err">Pick a shift first.</div>`; return; }
+  if (!file) { msg.innerHTML = `<div class="err">Choose a photo to upload.</div>`; return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      await api(`/temp/shifts/${shiftId}/photos`, { method: 'POST', body: { dataUrl: reader.result, caption } });
+      msg.innerHTML = `<div class="ok">Photo uploaded.</div>`;
+      document.getElementById('photoFile').value = '';
+      document.getElementById('photoCaption').value = '';
+      loadPhotoGallery(shiftId);
+    } catch (e) {
+      msg.innerHTML = `<div class="err">${e.message}</div>`;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ============ NOTIFICATIONS ============
 async function loadNotifications() {
   const { notifications } = await api('/notifications');
   const unread = notifications.filter((n) => !n.read).length;
@@ -195,6 +505,29 @@ async function loadNotifications() {
     </div>`).join('') : `<div class="empty">No notifications.</div>`;
 }
 async function markAllRead() { await api('/notifications/read-all', { method: 'POST' }); loadNotifications(); }
+
+// ============ PROFILE ============
+async function loadProfile() {
+  const { profile } = await api('/temp/profile');
+  document.getElementById('profName').value = profile.full_name || '';
+  document.getElementById('profPhone').value = profile.phone || '';
+  document.getElementById('profEmail').value = profile.email || '';
+  document.getElementById('profLang').value = profile.language_pref || 'en';
+}
+async function saveProfile() {
+  const fullName = document.getElementById('profName').value.trim();
+  const phone = document.getElementById('profPhone').value.trim();
+  const languagePref = document.getElementById('profLang').value;
+  const msg = document.getElementById('profMsg');
+  try {
+    await api('/temp/profile', { method: 'POST', body: { fullName, phone, languagePref } });
+    msg.innerHTML = `<div class="ok">Saved.</div>`;
+    document.getElementById('uName').textContent = fullName;
+    document.getElementById('avatar').textContent = initials(fullName);
+  } catch (e) {
+    msg.innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
 
 boot();
 </script>

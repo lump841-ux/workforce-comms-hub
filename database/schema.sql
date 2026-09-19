@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   avatar_url TEXT,
   active INTEGER NOT NULL DEFAULT 1,
+  language_pref TEXT NOT NULL DEFAULT 'en',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -109,6 +110,31 @@ CREATE TABLE IF NOT EXISTS shifts (
   replacement_shift_id TEXT REFERENCES shifts(id),
   original_shift_id TEXT REFERENCES shifts(id),
   notes TEXT,
+  en_route_at TEXT,
+  running_late_at TEXT,
+  cancel_reason_category TEXT,
+  cancel_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============ BREAKS ============
+CREATE TABLE IF NOT EXISTS shift_breaks (
+  id TEXT PRIMARY KEY,
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  temp_id TEXT NOT NULL REFERENCES users(id),
+  break_type TEXT NOT NULL DEFAULT 'short', -- lunch | short
+  paid INTEGER NOT NULL DEFAULT 1,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at TEXT
+);
+
+-- ============ PHOTO PROOF ============
+CREATE TABLE IF NOT EXISTS shift_photos (
+  id TEXT PRIMARY KEY,
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  temp_id TEXT NOT NULL REFERENCES users(id),
+  data_url TEXT NOT NULL,
+  caption TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

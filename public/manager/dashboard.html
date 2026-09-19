@@ -75,7 +75,10 @@
     <div id="tab-shifts" style="display:none">
       <div class="page-head">
         <div><div class="page-title">Shifts</div><div class="page-sub">All scheduled, active, and completed shifts</div></div>
-        <button class="btn btn-primary btn-sm" onclick="openNewShiftModal()">+ New Shift</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="repostLastShift()">↻ Repost Last Shift</button>
+          <button class="btn btn-primary btn-sm" onclick="openNewShiftModal()">+ New Shift</button>
+        </div>
       </div>
       <div class="card"><div id="shiftsTable"></div></div>
     </div>
@@ -234,6 +237,8 @@ let CURRENT_USER = null;
 let ACTIVE_CONV = null;
 let CLIENTS_CACHE = [];
 let TEMPS_CACHE = [];
+let SHIFTS_CACHE = [];
+const JOB_TITLE_CHIPS = ['Warehouse Associate', 'Forklift Operator', 'Picker/Packer', 'General Labor', 'Loader/Unloader', 'Order Selector'];
 let SITES_LOADED = false, ATTENDANCE_LOADED = false, TEAM_LOADED = false, OFFICES_LOADED = false, SETTINGS_LOADED = false, DISPUTES_LOADED = false;
 let DISPUTES_CACHE = [];
 
@@ -320,6 +325,7 @@ async function askAI() {
 
 async function loadShifts() {
   const { shifts } = await api('/manager/shifts');
+  SHIFTS_CACHE = shifts;
   document.getElementById('shiftsTable').innerHTML = shifts.length ? `
     <table><thead><tr><th>Client</th><th>Job</th><th>Temp</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
     <tbody>${shifts.map((s) => `
@@ -821,22 +827,71 @@ async function submitInviteTemp() {
   } catch (e) { toast(e.message, true); }
 }
 
-function openNewShiftModal(preselectTempId) {
+function openNewShiftModal(preselectTempId, prefill) {
   if (!CLIENTS_CACHE.length) return toast('Add a client first', true);
+  const p = prefill || {};
   openModal(`
     <span class="modal-close" onclick="closeModal()">&times;</span>
-    <h3>New Shift</h3>
-    <label>Client</label>
-    <select id="m_clientId">${CLIENTS_CACHE.map((c) => `<option value="${c.id}">${c.company_name}</option>`).join('')}</select>
-    <label>Temp (optional — leave unassigned to fill later)</label>
-    <select id="m_tempId"><option value="">Unassigned</option>${TEMPS_CACHE.map((w) => `<option value="${w.id}" ${preselectTempId === w.id ? 'selected' : ''}>${w.full_name}</option>`).join('')}</select>
-    <label>Job title</label><input id="m_jobTitle" placeholder="e.g. Warehouse Associate" />
-    <label>Shift date</label><input id="m_shiftDate" type="date" />
-    <div style="display:flex;gap:10px">
-      <div style="flex:1"><label>Start time</label><input id="m_startTime" type="time" /></div>
-      <div style="flex:1"><label>End time</label><input id="m_endTime" type="time" /></div>
+    <h3>${prefill ? 'Repost Shift' : 'New Shift'}</h3>
+
+    <label>Job title</label>
+    <div class="chip-row" id="m_jobChips">${JOB_TITLE_CHIPS.map((t) => `<span class="chip ${p.jobTitle === t ? 'active' : ''}" onclick="pickJobChip(this,'${t.replace(/'/g, "\\'")}')">${t}</span>`).join('')}</div>
+    <input id="m_jobTitle" placeholder="Or type a custom title..." value="${p.jobTitle ? p.jobTitle.replace(/"/g, '&quot;') : ''}" style="margin-top:6px" />
+
+    <label style="margin-top:14px">Client / site</label>
+    <select id="m_clientId">${CLIENTS_CACHE.map((c) => `<option value="${c.id}" ${p.clientId === c.id ? 'selected' : ''}>${c.company_name}</option>`).join('')}</select>
+
+    <label style="margin-top:14px">Date</label>
+    <div class="chip-row" id="m_dateChips">
+      <span class="chip" onclick="pickDateChip(this, 0)">Today</span>
+      <span class="chip" onclick="pickDateChip(this, 1)">Tomorrow</span>
+      <span class="chip" onclick="pickDateChip(this, 7)">Next Week</span>
     </div>
-    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitNewShift()">Create Shift</button>`);
+    <input id="m_shiftDate" type="date" value="${p.shiftDate || ''}" style="margin-top:6px" />
+
+    <label style="margin-top:14px">Shift time</label>
+    <div class="chip-row" id="m_timeChips">
+      <span class="chip" onclick="pickTimeChip(this,'07:00','15:00')">Day · 7a–3p</span>
+      <span class="chip" onclick="pickTimeChip(this,'15:00','23:00')">Swing · 3p–11p</span>
+      <span class="chip" onclick="pickTimeChip(this,'23:00','07:00')">Night · 11p–7a</span>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <div style="flex:1"><input id="m_startTime" type="time" value="${p.startTime || ''}" /></div>
+      <div style="flex:1"><input id="m_endTime" type="time" value="${p.endTime || ''}" /></div>
+    </div>
+
+    <label style="margin-top:14px">Who works it?</label>
+    <select id="m_tempId">
+      <option value="">Open Shift — any available worker can claim it</option>
+      ${TEMPS_CACHE.map((w) => `<option value="${w.id}" ${preselectTempId === w.id ? 'selected' : ''}>Assign: ${w.full_name}</option>`).join('')}
+    </select>
+
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitNewShift()">${prefill ? 'Post Shift' : 'Create Shift'}</button>`);
+}
+function pickJobChip(el, title) {
+  document.querySelectorAll('#m_jobChips .chip').forEach((c) => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('m_jobTitle').value = title;
+}
+function pickDateChip(el, daysFromNow) {
+  document.querySelectorAll('#m_dateChips .chip').forEach((c) => c.classList.remove('active'));
+  el.classList.add('active');
+  const d = new Date(); d.setDate(d.getDate() + daysFromNow);
+  document.getElementById('m_shiftDate').value = d.toISOString().slice(0, 10);
+}
+function pickTimeChip(el, start, end) {
+  document.querySelectorAll('#m_timeChips .chip').forEach((c) => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('m_startTime').value = start;
+  document.getElementById('m_endTime').value = end;
+}
+function repostLastShift() {
+  if (!SHIFTS_CACHE.length) return toast('No previous shifts to repost yet', true);
+  const last = SHIFTS_CACHE[0];
+  openNewShiftModal(null, {
+    jobTitle: last.job_title, clientId: last.client_id,
+    startTime: last.start_time, endTime: last.end_time, shiftDate: ''
+  });
 }
 async function submitNewShift() {
   const body = {
@@ -850,7 +905,7 @@ async function submitNewShift() {
   if (!body.jobTitle || !body.shiftDate || !body.startTime || !body.endTime) return toast('Fill in all shift fields', true);
   try {
     await api('/manager/shifts', { method: 'POST', body });
-    closeModal(); toast('Shift created'); loadShifts(); loadOverview();
+    closeModal(); toast(body.tempId ? 'Shift created and assigned' : 'Shift posted as open — workers can claim it'); loadShifts(); loadOverview();
   } catch (e) { toast(e.message, true); }
 }
 

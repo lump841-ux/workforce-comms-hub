@@ -273,6 +273,11 @@ tr:last-child td{border-bottom:none}
 .modal h3{margin-bottom:14px}
 .modal-close{float:right;cursor:pointer;color:var(--ink-soft);font-size:20px;line-height:1}
 
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+.chip{padding:7px 13px;border-radius:20px;border:1.5px solid var(--line);background:#fff;color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .15s ease;white-space:nowrap}
+.chip:hover{border-color:var(--blue);color:var(--blue)}
+.chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
+
 .tabs{display:flex;gap:4px;border-bottom:1.5px solid var(--line);margin-bottom:18px}
 .tab{padding:10px 4px;margin-right:22px;font-size:13.5px;font-weight:700;color:var(--ink-soft);border-bottom:2.5px solid transparent;cursor:pointer}
 .tab.active{color:var(--blue);border-color:var(--blue)}

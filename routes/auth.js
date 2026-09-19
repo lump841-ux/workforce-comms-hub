@@ -125,4 +125,22 @@ router.post('/register-client', (req, res) => {
   res.json({ ok: true, user: req.session.user });
 });
 
+// Emergency password reset for demo/test accounts — locked behind a secret
+// that only exists as a Railway env var (never committed). No self-serve
+// "forgot password" flow exists yet, so this is the only way to recover a
+// login until that's built.
+router.post('/dev/reset-password', (req, res) => {
+  const { secret, email, newPassword } = req.body;
+  if (!process.env.DEV_RESET_SECRET || secret !== process.env.DEV_RESET_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!email || !newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: 'email and newPassword (6+ chars) required' });
+  }
+  const user = get('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
+  if (!user) return res.status(404).json({ error: 'No account with that email' });
+  run('UPDATE users SET password_hash = ? WHERE id = ?', [bcrypt.hashSync(newPassword, 10), user.id]);
+  res.json({ ok: true });
+});
+
 module.exports = router;

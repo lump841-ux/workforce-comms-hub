@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Client Dashboard — Twanova</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="sidebar">
+    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Client HR</div></div></div>
+    <div style="padding:0 16px 14px">
+      <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);display:block;margin-bottom:4px">Agency</label>
+      <select id="agencySwitcher" style="width:100%;font-size:13px" onchange="switchAgency(this.value)"></select>
+      <button class="btn btn-outline btn-sm" style="width:100%;margin-top:8px" onclick="openConnectAgencyModal()">+ Connect another agency</button>
+    </div>
+    <a class="navlink active" data-tab="overview">📊 Overview</a>
+    <a class="navlink" data-tab="shifts">📅 Temps On-Site</a>
+    <a class="navlink" data-tab="messages">💬 Messages</a>
+    <a class="navlink" data-tab="raise">🚩 Raise an Issue</a>
+    <div class="sidebar-foot">
+      <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role">Client HR</div></div></div>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+  <div class="main">
+
+    <div id="tab-overview">
+      <div class="page-head"><div><div class="page-title">Your Staffing Overview</div><div class="page-sub">Live status of temps from your agency</div></div></div>
+      <div class="stat-grid" id="overviewStats"></div>
+    </div>
+
+    <div id="tab-shifts" style="display:none">
+      <div class="page-head"><div><div class="page-title">Temps On-Site</div></div></div>
+      <div class="card"><div id="shiftsTable"></div></div>
+    </div>
+
+    <div id="tab-messages" style="display:none">
+      <div class="page-head"><div><div class="page-title">Messages</div></div></div>
+      <div class="msg-layout">
+        <div class="conv-list" id="convList"></div>
+        <div class="conv-pane" id="convPane"><div class="empty">Select a conversation.</div></div>
+      </div>
+    </div>
+
+    <div id="tab-raise" style="display:none">
+      <div class="page-head"><div><div class="page-title">Raise an Issue</div><div class="page-sub">This notifies your agency's managers immediately and opens an escalation</div></div></div>
+      <div class="card" style="max-width:520px">
+        <label>Subject</label><input id="r_subject" placeholder="e.g. Temp did not show up" />
+        <label>Priority</label>
+        <select id="r_priority"><option value="urgent">Urgent</option><option value="critical">Critical</option></select>
+        <label>Details</label><textarea id="r_message" rows="5" placeholder="What happened?"></textarea>
+        <button class="btn btn-danger btn-block" style="margin-top:16px" onclick="raiseIssue()">Send to Agency</button>
+        <div id="raiseMsg"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+let CURRENT_USER = null;
+let ACTIVE_CONV = null;
+
+async function boot() {
+  CURRENT_USER = await requireSession(['client_hr']);
+  if (!CURRENT_USER) return;
+  document.getElementById('uName').textContent = CURRENT_USER.full_name;
+  document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
+  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => switchTab(el.dataset.tab)));
+  await loadAgencies();
+  await Promise.all([loadOverview(), loadShifts(), loadConversations()]);
+  setInterval(() => { loadOverview(); loadConversations(); }, 20000);
+}
+
+async function loadAgencies() {
+  const { agencies, currentAgencyId } = await api('/client/agencies');
+  const sel = document.getElementById('agencySwitcher');
+  const active = agencies.filter((a) => a.status === 'active');
+  const pending = agencies.filter((a) => a.status === 'pending');
+
+  if (!active.length) {
+    sel.innerHTML = `<option value="">No agency connected yet</option>`;
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.innerHTML = active.map((a) => `<option value="${a.linkId}" ${a.agencyId === currentAgencyId ? 'selected' : ''}>${a.agencyName}</option>`).join('')
+      + (pending.length ? `<option disabled>──────────</option>` + pending.map((a) => `<option disabled>${a.agencyName} (pending approval)</option>`).join('') : '');
+  }
+}
+
+async function switchAgency(linkId) {
+  if (!linkId) return;
+  await api('/client/switch-agency', { method: 'POST', body: { linkId } });
+  toast('Switched agency');
+  await Promise.all([loadOverview(), loadShifts(), loadConversations()]);
+}
+
+function openConnectAgencyModal() {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Connect another agency</h3>
+        <p style="margin:0 0 14px;font-size:13px;color:var(--ink-soft)">Enter the connect code your staffing agency gave you. They'll need to approve the connection before it goes live — your login stays the same either way.</p>
+        <label>Agency connect code</label>
+        <input id="connectSlug" placeholder="e.g. acme-staffing" />
+        <div id="connectMsg"></div>
+        <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitConnectAgency()">Send connection request</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitConnectAgency() {
+  const agencySlug = document.getElementById('connectSlug').value.trim();
+  const msgEl = document.getElementById('connectMsg');
+  if (!agencySlug) return;
+  try {
+    await api('/client/connect-agency', { method: 'POST', body: { agencySlug } });
+    document.querySelector('.modal-backdrop').remove();
+    toast('Request sent — waiting on the agency to approve');
+    loadAgencies();
+  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
+  ['overview', 'shifts', 'messages', 'raise'].forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
+}
+
+async function loadOverview() {
+  const o = await api('/client/overview');
+  if (o.noAgencyConnected) {
+    document.getElementById('overviewStats').innerHTML = `
+      <div class="card" style="grid-column:1/-1">
+        <div class="empty">You're not connected to an agency yet. Use "+ Connect another agency" in the sidebar with the connect code your staffing agency gave you.</div>
+      </div>`;
+    return;
+  }
+  document.getElementById('overviewStats').innerHTML = `
+    <div class="stat-card"><div class="label">Today's Shifts</div><div class="value">${o.todayShiftCount}</div></div>
+    <div class="stat-card good"><div class="label">Temps On-Site</div><div class="value">${o.tempsOnSiteToday}</div></div>
+    <div class="stat-card ${o.noShowsToday ? 'bad' : ''}"><div class="label">No-Shows Today</div><div class="value">${o.noShowsToday}</div></div>
+    <div class="stat-card ${o.openEscalations ? 'warn' : ''}"><div class="label">Open Issues</div><div class="value">${o.openEscalations}</div></div>`;
+}
+
+async function loadShifts() {
+  const { shifts } = await api('/client/shifts');
+  document.getElementById('shiftsTable').innerHTML = shifts.length ? `
+    <table><thead><tr><th>Temp</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
+    <tbody>${shifts.map((s) => `<tr><td>${s.temp_name || 'Unassigned'}</td><td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No shifts on record yet.</div>`;
+}
+
+async function loadConversations() {
+  const { conversations } = await api('/conversations');
+  document.getElementById('convList').innerHTML = conversations.length ? conversations.map((c) => `
+    <div class="conv-item ${ACTIVE_CONV === c.id ? 'active' : ''}" onclick="openConv('${c.id}')">
+      <div class="subj">${c.subject || 'Conversation'} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
+      <div class="prev">${c.last_message || 'No messages yet'}</div>
+    </div>`).join('') : `<div class="empty">No conversations yet.</div>`;
+}
+
+async function openConv(id) {
+  ACTIVE_CONV = id;
+  const { conversation, messages } = await api(`/conversations/${id}`);
+  document.getElementById('convPane').innerHTML = `
+    <div class="conv-header"><strong>${conversation.subject || 'Conversation'}</strong> ${pill(conversation.status)}</div>
+    <div class="conv-messages" id="convMessages">${messages.map((m) => `
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+    <div class="conv-input"><input id="replyBody" placeholder="Type a reply…" onkeydown="if(event.key==='Enter')sendReply('${id}')"/><button class="btn btn-primary" onclick="sendReply('${id}')">Send</button></div>`;
+  const box = document.getElementById('convMessages'); box.scrollTop = box.scrollHeight;
+  loadConversations();
+}
+async function sendReply(id) {
+  const input = document.getElementById('replyBody');
+  const body = input.value.trim();
+  if (!body) return;
+  input.value = '';
+  await api(`/conversations/${id}/messages`, { method: 'POST', body: { body } });
+  openConv(id);
+}
+
+async function raiseIssue() {
+  const subject = document.getElementById('r_subject').value.trim();
+  const message = document.getElementById('r_message').value.trim();
+  const priority = document.getElementById('r_priority').value;
+  const msgEl = document.getElementById('raiseMsg');
+  if (!subject || !message) { msgEl.innerHTML = `<div class="err">Subject and details are required</div>`; return; }
+  try {
+    await api('/client/raise-issue', { method: 'POST', body: { subject, message, priority } });
+    msgEl.innerHTML = `<div class="ok">Sent — your agency has been notified.</div>`;
+    document.getElementById('r_subject').value = ''; document.getElementById('r_message').value = '';
+    loadOverview(); loadConversations();
+  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+}
+
+boot();
+</script>
+</body>
+</html>

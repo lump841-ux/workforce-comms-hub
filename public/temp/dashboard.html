@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>My Dashboard — Twanova</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div class="sidebar">
+    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Temp</div></div></div>
+    <a class="navlink active" data-tab="shifts">📅 My Shifts</a>
+    <a class="navlink" data-tab="open">🟢 Open Shifts <span id="openBadge" class="badge" style="display:none">0</span></a>
+    <a class="navlink" data-tab="messages">💬 Messages <span id="msgBadge" class="badge" style="display:none">0</span></a>
+    <a class="navlink" data-tab="notifications">🔔 Notifications <span id="notifBadge" class="badge" style="display:none">0</span></a>
+    <div class="sidebar-foot">
+      <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role">Temp</div></div></div>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+  <div class="main">
+    <div id="tab-shifts">
+      <div class="page-head"><div><div class="page-title">My Shifts</div><div class="page-sub">Confirm, clock in, and clock out of your assignments</div></div></div>
+      <div class="card"><div class="card-head"><h3>Upcoming</h3></div><div id="upcomingShifts"></div></div>
+      <div class="card"><div class="card-head"><h3>History</h3></div><div id="historyShifts"></div></div>
+    </div>
+
+    <div id="tab-open" style="display:none">
+      <div class="page-head"><div><div class="page-title">Open Shifts</div><div class="page-sub">Shifts offered to you as a replacement — first to accept gets it</div></div></div>
+      <div class="card"><div id="openShiftsList"></div></div>
+    </div>
+
+    <div id="tab-messages" style="display:none">
+      <div class="page-head"><div><div class="page-title">Messages</div><div class="page-sub">Talk to your agency manager</div></div></div>
+      <div class="msg-layout">
+        <div class="conv-list" id="convList"></div>
+        <div class="conv-pane" id="convPane">
+          <div class="empty">Select a conversation, or send your manager a message.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-notifications" style="display:none">
+      <div class="page-head"><div><div class="page-title">Notifications</div></div>
+        <button class="btn btn-outline btn-sm" onclick="markAllRead()">Mark all read</button>
+      </div>
+      <div class="card"><div id="notifList"></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+let CURRENT_USER = null;
+let ACTIVE_CONV = null;
+
+async function boot() {
+  CURRENT_USER = await requireSession(['temp']);
+  if (!CURRENT_USER) return;
+  document.getElementById('uName').textContent = CURRENT_USER.full_name;
+  document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
+
+  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => switchTab(el.dataset.tab)));
+
+  await Promise.all([loadShifts(), loadOpenShifts(), loadConversations(), loadNotifications()]);
+  setInterval(() => { loadOpenShifts(); loadNotifications(); loadConversations(); }, 20000);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
+  ['shifts', 'open', 'messages', 'notifications'].forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
+}
+
+async function loadShifts() {
+  const { upcoming, history } = await api('/temp/shifts');
+  document.getElementById('upcomingShifts').innerHTML = upcoming.length ? `
+    <table><thead><tr><th>Client</th><th>Job</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
+    <tbody>${upcoming.map((s) => `
+      <tr>
+        <td>${s.company_name}${s.site_name ? ' · ' + s.site_name : ''}</td>
+        <td>${s.job_title}</td>
+        <td>${fmtDate(s.shift_date)}</td>
+        <td>${s.start_time}–${s.end_time}</td>
+        <td>${pill(s.status)}</td>
+        <td>
+          ${s.status === 'scheduled' ? `<button class="btn btn-outline btn-sm" onclick="confirmShift('${s.id}')">Confirm</button>` : ''}
+          ${s.status === 'confirmed' ? `<button class="btn btn-primary btn-sm" onclick="clockIn('${s.id}')">Clock in</button>` : ''}
+          ${s.status === 'in_progress' ? `<button class="btn btn-outline btn-sm" onclick="clockOut('${s.id}')">Clock out</button>` : ''}
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No upcoming shifts.</div>`;
+
+  document.getElementById('historyShifts').innerHTML = history.length ? `
+    <table><thead><tr><th>Client</th><th>Job</th><th>Date</th><th>Status</th></tr></thead>
+    <tbody>${history.map((s) => `<tr><td>${s.company_name}</td><td>${s.job_title}</td><td>${fmtDate(s.shift_date)}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No shift history yet.</div>`;
+}
+
+async function confirmShift(id) { await api(`/temp/shifts/${id}/confirm`, { method: 'POST' }); toast('Shift confirmed'); loadShifts(); }
+async function clockIn(id) { await api(`/temp/shifts/${id}/clock-in`, { method: 'POST' }); toast('Clocked in'); loadShifts(); }
+async function clockOut(id) { await api(`/temp/shifts/${id}/clock-out`, { method: 'POST' }); toast('Clocked out — shift complete'); loadShifts(); }
+
+async function loadOpenShifts() {
+  const { openShifts } = await api('/temp/open-shifts');
+  const badge = document.getElementById('openBadge');
+  badge.style.display = openShifts.length ? '' : 'none';
+  badge.textContent = openShifts.length;
+
+  document.getElementById('openShiftsList').innerHTML = openShifts.length ? openShifts.map((s) => `
+    <div class="card" style="box-shadow:none;border:1px solid var(--line);margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <strong>${s.job_title}</strong> at ${s.company_name}${s.site_name ? ' · ' + s.site_name : ''}<br/>
+          <span style="color:var(--ink-soft);font-size:13px">${fmtDate(s.shift_date)} · ${s.start_time}–${s.end_time}</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="acceptOpen('${s.replacement_request_id}')">Accept</button>
+          <button class="btn btn-outline btn-sm" onclick="declineOpen('${s.replacement_request_id}')">Decline</button>
+        </div>
+      </div>
+    </div>`).join('') : `<div class="empty">No open shifts offered to you right now.</div>`;
+}
+
+async function acceptOpen(reqId) {
+  try {
+    await api(`/temp/open-shifts/${reqId}/accept`, { method: 'POST' });
+    toast('Shift accepted — added to My Shifts');
+    loadOpenShifts(); loadShifts();
+  } catch (e) { toast(e.message, true); loadOpenShifts(); }
+}
+async function declineOpen(reqId) { await api(`/temp/open-shifts/${reqId}/decline`, { method: 'POST' }); loadOpenShifts(); }
+
+async function loadConversations() {
+  const { conversations } = await api('/conversations');
+  const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
+  const badge = document.getElementById('msgBadge');
+  badge.style.display = totalUnread ? '' : 'none';
+  badge.textContent = totalUnread;
+
+  document.getElementById('convList').innerHTML = conversations.length ? conversations.map((c) => `
+    <div class="conv-item ${ACTIVE_CONV === c.id ? 'active' : ''}" onclick="openConv('${c.id}')">
+      <div class="subj">${c.subject || 'Conversation'} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
+      <div class="prev">${c.last_message || 'No messages yet'}</div>
+    </div>`).join('') : `<div class="empty">No conversations yet.</div>`;
+
+  if (!ACTIVE_CONV) {
+    document.getElementById('convPane').innerHTML = `
+      <div class="conv-header"><strong>New message to your manager</strong></div>
+      <div style="padding:18px">
+        <textarea id="newMsgBody" rows="4" placeholder="What's going on?"></textarea>
+        <button class="btn btn-primary" style="margin-top:10px" onclick="startConversation()">Send to manager</button>
+      </div>`;
+  }
+}
+
+async function startConversation() {
+  const body = document.getElementById('newMsgBody').value.trim();
+  if (!body) return;
+  await api('/conversations', { method: 'POST', body: { participantIds: [], subject: 'Message from ' + CURRENT_USER.full_name, firstMessage: body, priority: 'normal' } });
+  toast('Message sent');
+  loadConversations();
+}
+
+async function openConv(id) {
+  ACTIVE_CONV = id;
+  const { conversation, messages } = await api(`/conversations/${id}`);
+  document.getElementById('convPane').innerHTML = `
+    <div class="conv-header"><strong>${conversation.subject || 'Conversation'}</strong> ${pill(conversation.status)}</div>
+    <div class="conv-messages" id="convMessages">${messages.map((m) => `
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+    <div class="conv-input"><input id="replyBody" placeholder="Type a reply…" onkeydown="if(event.key==='Enter')sendReply('${id}')"/><button class="btn btn-primary" onclick="sendReply('${id}')">Send</button></div>`;
+  const box = document.getElementById('convMessages'); box.scrollTop = box.scrollHeight;
+  loadConversations();
+}
+
+async function sendReply(id) {
+  const input = document.getElementById('replyBody');
+  const body = input.value.trim();
+  if (!body) return;
+  input.value = '';
+  await api(`/conversations/${id}/messages`, { method: 'POST', body: { body } });
+  openConv(id);
+}
+
+async function loadNotifications() {
+  const { notifications } = await api('/notifications');
+  const unread = notifications.filter((n) => !n.read).length;
+  const badge = document.getElementById('notifBadge');
+  badge.style.display = unread ? '' : 'none';
+  badge.textContent = unread;
+  document.getElementById('notifList').innerHTML = notifications.length ? notifications.map((n) => `
+    <div style="padding:12px 4px;border-bottom:1px solid var(--line);${n.read ? 'opacity:.6' : ''}">
+      <strong>${n.title}</strong><br/><span style="font-size:13px;color:var(--ink-soft)">${n.body || ''}</span>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${fmtDateTime(n.created_at)}</div>
+    </div>`).join('') : `<div class="empty">No notifications.</div>`;
+}
+async function markAllRead() { await api('/notifications/read-all', { method: 'POST' }); loadNotifications(); }
+
+boot();
+</script>
+</body>
+</html>

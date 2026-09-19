@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Create your client account — Workforce Communications Hub</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="auth-page-wrap">
+  <div class="auth-topband">
+    <img src="/brand-logo-compact.png" alt="Twanova" />
+    <div class="band-name">Workforce Communications Hub — Client Login</div>
+  </div>
+  <div class="center-screen">
+  <div class="auth-card">
+    <p style="margin:0 0 16px;font-size:13.5px;color:var(--ink-soft);">
+      Set up your company's own Twanova login. You can connect it to any staffing agency you work with —
+      now or later — and it'll stay the same login even if you work with more than one.
+    </p>
+    <form id="signupForm">
+      <label>Company name</label>
+      <input type="text" id="companyName" required />
+      <label>Your name</label>
+      <input type="text" id="fullName" required />
+      <label>Email</label>
+      <input type="email" id="email" required autocomplete="username" />
+      <label>Password</label>
+      <input type="password" id="password" required minlength="6" autocomplete="new-password" />
+      <label>Agency connect code <span style="font-weight:400;color:var(--ink-soft);">(optional — an agency you already work with can give you this)</span></label>
+      <input type="text" id="agencySlug" placeholder="e.g. acme-staffing" />
+      <button class="btn btn-primary btn-block" style="margin-top:20px" type="submit">Create account</button>
+      <div id="msg"></div>
+    </form>
+    <div class="foot-link">
+      Already have a client login? <a href="/client-login.html">Sign in</a><br/>
+      Staffing agency? <a href="/agency-signup.html">Set up your agency</a>
+    </div>
+  </div>
+  </div>
+</div>
+<script src="/app.js"></script>
+<script>
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  try {
+    await api('/auth/register-client', {
+      method: 'POST',
+      body: {
+        companyName: document.getElementById('companyName').value,
+        fullName: document.getElementById('fullName').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      }
+    });
+
+    const agencySlug = document.getElementById('agencySlug').value.trim();
+    if (agencySlug) {
+      try {
+        await api('/client/connect-agency', { method: 'POST', body: { agencySlug } });
+      } catch (connectErr) {
+        // Account is created either way — surface the connect issue but still proceed.
+        sessionStorage.setItem('twanova_connect_notice', connectErr.message);
+      }
+    }
+    window.location.href = '/client/dashboard.html';
+  } catch (err) {
+    msg.innerHTML = `<div class="err">${err.message}</div>`;
+  }
+});
+</script>
+</body>
+</html>

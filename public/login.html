@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign in — Twanova Workforce Communications Hub</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="split-auth">
+  <div class="split-hero">
+    <div class="sh-brand"><div class="mark">T</div><div class="name">Twanova</div></div>
+    <div class="sh-headline">Simplify field labor dispatch.</div>
+    <div class="sh-sub">Empower your dispatchers to assign shifts, handle sudden no-shows, and maintain strict SLA safety compliance with our intelligent workforce hub.</div>
+    <div class="sh-foot">
+      <div>Trusted by 40+ national construction firms</div>
+      <div class="sh-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+  <div class="split-form-pane">
+    <div class="split-form-inner">
+      <h1>Welcome back</h1>
+      <div class="sf-sub">Enter your credentials to access your agency dispatch console.</div>
+      <form id="loginForm">
+        <label>Email Address</label>
+        <input type="email" id="email" required autocomplete="username" placeholder="sarah.jenkins@twanova.com" />
+        <label>Password <a href="#" class="foot-link" style="margin:0;font-size:12.5px" onclick="return false">Forgot Password?</a></label>
+        <div class="pw-wrap">
+          <input type="password" id="password" required autocomplete="current-password" placeholder="••••••••••" />
+        </div>
+        <div class="keep-signed"><input type="checkbox" id="keepSignedIn" checked style="width:auto" /> Keep me signed in</div>
+        <button class="btn btn-primary btn-block" style="margin-top:20px" type="submit">Sign In</button>
+        <div id="msg"></div>
+      </form>
+      <div class="foot-link">
+        Don't have an account? <a href="/agency-signup.html">Create one here</a><br/>
+        Client company? <a href="/client-login.html">Client login</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/app.js"></script>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  try {
+    const { user } = await api('/auth/login', {
+      method: 'POST',
+      body: { email: document.getElementById('email').value, password: document.getElementById('password').value }
+    });
+    const dest = { temp: '/temp/dashboard.html', agency_manager: '/manager/dashboard.html', agency_admin: '/manager/dashboard.html', client_hr: '/client/dashboard.html' }[user.role] || '/login.html';
+    window.location.href = dest;
+  } catch (err) {
+    msg.innerHTML = `<div class="err">${err.message}</div>`;
+  }
+});
+</script>
+</body>
+</html>

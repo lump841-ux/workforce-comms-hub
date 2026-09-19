@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agency Command Center — Twanova</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="mobile-topbar">
+  <button class="hamburger" onclick="toggleMobileNav()" aria-label="Menu">☰</button>
+  <img src="../brand-logo-compact.png" alt="Twanova" />
+  <div class="mt-title" id="mtTitle">Command Center</div>
+</div>
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleMobileNav(false)"></div>
+<div class="app-shell">
+  <div class="sidebar" id="sidebarNav">
+    <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Command Center</div></div></div>
+    <a class="navlink active" data-tab="overview" data-icon="📊"><span class="nl-icon">📊</span><span class="nl-label">Overview</span></a>
+    <a class="navlink" data-tab="temps" data-icon="👷"><span class="nl-icon">👷</span><span class="nl-label">Workers</span></a>
+    <a class="navlink" data-tab="clients" data-icon="🏢"><span class="nl-icon">🏢</span><span class="nl-label">Clients</span></a>
+    <a class="navlink" data-tab="sites" data-icon="📍"><span class="nl-icon">📍</span><span class="nl-label">Sites</span></a>
+    <a class="navlink" data-tab="shifts" data-icon="📅"><span class="nl-icon">📅</span><span class="nl-label">Shifts</span></a>
+    <a class="navlink" data-tab="messages" data-icon="💬"><span class="nl-icon">💬</span><span class="nl-label">Messages</span> <span id="msgBadge" class="badge" style="display:none">0</span></a>
+    <a class="navlink" data-tab="attendance" data-icon="🕓"><span class="nl-icon">🕓</span><span class="nl-label">Attendance</span></a>
+    <a class="navlink" data-tab="escalations" data-icon="⚠️"><span class="nl-icon">⚠️</span><span class="nl-label">Issues</span> <span id="escBadge" class="badge" style="display:none">0</span></a>
+    <a class="navlink" data-tab="replacements" data-icon="🔁"><span class="nl-icon">🔁</span><span class="nl-label">Replacements</span></a>
+    <a class="navlink" data-tab="analytics" data-icon="📈"><span class="nl-icon">📈</span><span class="nl-label">Reports</span></a>
+    <a class="navlink" data-tab="team" data-icon="🧑‍🤝‍🧑"><span class="nl-icon">🧑‍🤝‍🧑</span><span class="nl-label">Team</span></a>
+    <a class="navlink" data-tab="offices" data-icon="🏬"><span class="nl-icon">🏬</span><span class="nl-label">Offices</span></a>
+    <a class="navlink" data-tab="settings" data-icon="⚙️"><span class="nl-icon">⚙️</span><span class="nl-label">Settings</span></a>
+    <div class="sidebar-foot">
+      <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role" id="uRole">Manager</div></div></div>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+  <div class="main">
+
+    <div id="tab-overview">
+      <div class="page-head"><div><div class="page-title" id="greeting">Good morning!</div><div class="page-sub" id="greetingSub"></div></div></div>
+      <div class="stat-grid" id="overviewStats"></div>
+
+      <div class="dash-layout">
+        <div>
+          <div class="card">
+            <div class="card-head"><h3>Quick Shift Summary</h3></div>
+            <div id="quickShiftTable"></div>
+          </div>
+          <div class="ai-box" style="margin-top:16px">
+            <h3><span class="spark">✦</span> AI Briefing</h3>
+            <p id="briefingText">Loading…</p>
+            <div class="ai-ask">
+              <input id="aiQuestion" placeholder="Ask about no-shows, escalations, replacements, messages…" onkeydown="if(event.key==='Enter')askAI()"/>
+              <button class="btn btn-primary" onclick="askAI()">Ask</button>
+            </div>
+            <p id="aiAnswer" style="margin-top:10px;font-size:13.5px"></p>
+          </div>
+        </div>
+        <div>
+          <div class="sidebar-cta">
+            <div class="cta-art"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="14" height="12" rx="1.5"/><path d="M17 10h3l1 3v6h-4"/><circle cx="7.5" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg></div>
+            <h3>Keep Operations Focused</h3>
+            <p>Twanova helps you manage replacements in under 3 minutes.</p>
+            <button class="btn btn-primary" onclick="switchTab('replacements')">Initiate Replacement</button>
+          </div>
+          <div class="card quick-actions-card" style="margin-top:16px">
+            <div class="card-head"><h3>Quick Actions</h3></div>
+            <button class="qa-btn" onclick="openNewShiftModal()"><span class="qa-icon">+</span> Assign New Shift</button>
+            <button class="qa-btn" onclick="openInviteTempModal()"><span class="qa-icon">+</span> Register New Worker</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-shifts" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Shifts</div><div class="page-sub">All scheduled, active, and completed shifts</div></div>
+        <button class="btn btn-primary btn-sm" onclick="openNewShiftModal()">+ New Shift</button>
+      </div>
+      <div class="card"><div id="shiftsTable"></div></div>
+    </div>
+
+    <div id="tab-replacements" style="display:none">
+      <div class="page-head"><div><div class="page-title">Replacement Requests</div><div class="page-sub">No-show coverage in progress</div></div></div>
+      <div class="card"><div id="replacementsTable"></div></div>
+    </div>
+
+    <div id="tab-escalations" style="display:none">
+      <div class="page-head"><div><div class="page-title">Issues Center</div><div class="page-sub">Escalations and time disputes. Tier 1 = manager · Tier 2 = manager + admin · Tier 3 = admin + client HR</div></div></div>
+      <div class="card"><div id="escalationsTable"></div></div>
+
+      <div class="page-head" style="margin-top:24px"><div><div class="page-title" style="font-size:18px">Time Disputes</div><div class="page-sub">Discrepancies between worker-reported hours and client-approved hours</div></div></div>
+      <div class="wm-layout">
+        <div class="card"><div id="disputesTable"></div></div>
+        <div class="card" id="disputeDetailPanel"><div class="wp-empty">Select a dispute to see worker vs. client claims.</div></div>
+      </div>
+    </div>
+
+    <div id="tab-messages" style="display:none">
+      <div class="page-head"><div><div class="page-title">Messages</div></div></div>
+      <div class="msg-layout">
+        <div class="conv-list" id="convList"></div>
+        <div class="conv-pane" id="convPane"><div class="empty">Select a conversation.</div></div>
+      </div>
+    </div>
+
+    <div id="tab-clients" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Clients Management</div><div class="page-sub">Overview of contract relationships, enterprise sites, and active supervisors.</div></div>
+      </div>
+
+      <div class="card cm-banner">
+        <div>
+          <h3>Enterprise Relationships</h3>
+          <p>Seamlessly connecting operations with active client sites worldwide.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openNewClientModal()">Register Client Corp</button>
+      </div>
+
+      <div id="clientsPendingArea"></div>
+
+      <div class="cm-filters">
+        <input type="text" id="cmSearch" placeholder="Search enterprise client database..." oninput="renderClientsTable()" />
+        <select id="cmStatusFilter" onchange="renderClientsTable()">
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="pending">Pending</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
+      <div class="card"><div id="clientsTable"></div></div>
+    </div>
+
+    <div id="tab-temps" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Workers Management</div><div class="page-sub">Manage your pool of verified professionals and check real-time attendance.</div></div>
+        <button class="btn btn-primary btn-sm" onclick="openInviteTempModal()">+ Invite Worker</button>
+      </div>
+
+      <div class="card wm-banner">
+        <div>
+          <h3>People. Trust. Progress.</h3>
+          <p>Connecting enterprise needs with high-integrity field labor.</p>
+        </div>
+        <div class="wm-avatars" id="wmBannerAvatars"></div>
+      </div>
+
+      <div class="wm-filters">
+        <input type="text" class="wm-search" id="wmSearch" placeholder="Search workers..." oninput="renderWorkersTable()" />
+        <select id="wmStatusFilter" onchange="renderWorkersTable()">
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="pending">Pending</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <select id="wmAttendanceFilter" onchange="renderWorkersTable()">
+          <option value="">All Attendance</option>
+          <option value="90">High Attendance (&gt;90%)</option>
+          <option value="70">Moderate (70–90%)</option>
+          <option value="0">Needs Attention (&lt;70%)</option>
+        </select>
+      </div>
+
+      <div class="wm-layout">
+        <div class="card"><div id="workersTable"></div></div>
+        <div class="card worker-profile-card" id="workerProfilePanel">
+          <div class="wp-empty">Select a worker to see their profile.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-analytics" style="display:none">
+      <div class="page-head"><div><div class="page-title">Reports</div><div class="page-sub">No-show rates, replacement performance, and messaging volume</div></div></div>
+      <div class="stat-grid" id="analyticsStats"></div>
+    </div>
+
+    <div id="tab-sites" style="display:none">
+      <div class="page-head"><div><div class="page-title">Sites</div><div class="page-sub">Every active worksite across your client roster</div></div></div>
+      <div class="card"><div id="sitesTable"></div></div>
+    </div>
+
+    <div id="tab-attendance" style="display:none">
+      <div class="page-head"><div><div class="page-title">Attendance</div><div class="page-sub">Monitor real-time clock-in events, hours worked, and compliance ratings.</div></div></div>
+      <div class="stat-grid" id="attendanceStats"></div>
+      <div class="cm-filters">
+        <input type="date" id="attFrom" />
+        <input type="date" id="attTo" />
+        <select id="attStatusFilter">
+          <option value="">All Statuses</option>
+          <option value="on_site">On Time / On Site</option>
+          <option value="running_late">Late</option>
+          <option value="no_show">No Show</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadAttendance()">Apply</button>
+      </div>
+      <div class="card"><div id="attendanceTable"></div></div>
+    </div>
+
+    <div id="tab-team" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Team</div><div class="page-sub">Internal dispatchers and admins on your agency account</div></div>
+        <button class="btn btn-primary btn-sm" onclick="openInviteTeamModal()">+ Add Team Member</button>
+      </div>
+      <div class="card"><div id="teamTable"></div></div>
+    </div>
+
+    <div id="tab-offices" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Offices</div><div class="page-sub">Branch locations for your agency</div></div>
+        <button class="btn btn-primary btn-sm" onclick="openNewOfficeModal()">+ Add Office</button>
+      </div>
+      <div class="card"><div id="officesTable"></div></div>
+    </div>
+
+    <div id="tab-settings" style="display:none">
+      <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Agency account details</div></div></div>
+      <div class="card" style="max-width:480px">
+        <label>Agency name</label><input id="s_agencyName" />
+        <label>Agency slug</label><input id="s_agencySlug" disabled />
+        <label>Plan</label><input id="s_agencyPlan" disabled />
+        <button class="btn btn-primary" style="margin-top:16px" onclick="saveSettings()">Save Changes</button>
+        <div id="settingsMsg"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<script src="/app.js"></script>
+<script>
+let CURRENT_USER = null;
+let ACTIVE_CONV = null;
+let CLIENTS_CACHE = [];
+let TEMPS_CACHE = [];
+let SITES_LOADED = false, ATTENDANCE_LOADED = false, TEAM_LOADED = false, OFFICES_LOADED = false, SETTINGS_LOADED = false, DISPUTES_LOADED = false;
+let DISPUTES_CACHE = [];
+
+async function boot() {
+  CURRENT_USER = await requireSession(['agency_manager', 'agency_admin']);
+  if (!CURRENT_USER) return;
+  document.getElementById('uName').textContent = CURRENT_USER.full_name;
+  document.getElementById('uRole').textContent = CURRENT_USER.role.replace('_', ' ');
+  document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
+  document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => { switchTab(el.dataset.tab); toggleMobileNav(false); }));
+
+  const hour = new Date().getHours();
+  const daypart = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  document.getElementById('greeting').textContent = `Good ${daypart}, ${CURRENT_USER.full_name.split(' ')[0]}!`;
+  document.getElementById('greetingSub').textContent = `Here is your workforce activity overview for today, ${fmtDate(new Date().toISOString().slice(0,10))}.`;
+
+  await Promise.all([loadOverview(), loadQuickShiftSummary(), loadBriefing(), loadShifts(), loadReplacements(), loadEscalations(), loadConversations(), loadClients(), loadTemps(), loadAnalytics()]);
+  setInterval(() => { loadOverview(); loadQuickShiftSummary(); loadEscalations(); loadReplacements(); loadConversations(); }, 20000);
+}
+
+const ALL_TABS = ['overview', 'shifts', 'replacements', 'escalations', 'messages', 'clients', 'temps', 'analytics', 'sites', 'attendance', 'team', 'offices', 'settings'];
+const TAB_TITLES = { overview: 'Overview', shifts: 'Shifts', replacements: 'Replacements', escalations: 'Issues', messages: 'Messages', clients: 'Clients', temps: 'Workers', analytics: 'Reports', sites: 'Sites', attendance: 'Attendance', team: 'Team', offices: 'Offices', settings: 'Settings' };
+function switchTab(tab) {
+  document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
+  ALL_TABS.forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
+  const mt = document.getElementById('mtTitle');
+  if (mt) mt.textContent = TAB_TITLES[tab] || 'Command Center';
+  if (tab === 'sites' && !SITES_LOADED) loadSites();
+  if (tab === 'attendance' && !ATTENDANCE_LOADED) loadAttendance();
+  if (tab === 'team' && !TEAM_LOADED) loadTeam();
+  if (tab === 'offices' && !OFFICES_LOADED) loadOffices();
+  if (tab === 'settings' && !SETTINGS_LOADED) loadSettings();
+  if (tab === 'escalations' && !DISPUTES_LOADED) loadTimeDisputes();
+}
+function toggleMobileNav(force) {
+  const sidebar = document.getElementById('sidebarNav');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const open = typeof force === 'boolean' ? force : !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', open);
+  backdrop.classList.toggle('open', open);
+}
+
+async function loadOverview() {
+  const o = await api('/manager/overview');
+  document.getElementById('overviewStats').innerHTML = `
+    <div class="stat-card"><div class="label">Today's Shifts</div><div class="value">${o.todayShiftCount}</div></div>
+    <div class="stat-card"><div class="label">On Their Way</div><div class="value" style="color:#2563eb">${o.onTheWay}</div></div>
+    <div class="stat-card good"><div class="label">Arrived On Site</div><div class="value">${o.arrivedOnSite}</div></div>
+    <div class="stat-card warn"><div class="label">Running Late</div><div class="value">${o.runningLate}</div></div>
+    <div class="stat-card ${o.noShowsToday ? 'bad' : ''}"><div class="label">No-Shows</div><div class="value">${o.noShowsToday}</div></div>`;
+  const escBadge = document.getElementById('escBadge');
+  escBadge.style.display = o.openEscalations ? '' : 'none';
+  escBadge.textContent = o.openEscalations;
+}
+
+const DISPLAY_STATUS_LABEL = { scheduled: 'Scheduled', on_the_way: 'On My Way', on_site: 'On Site', running_late: 'Running Late', no_show: 'No Show', replaced: 'Replaced', cancelled: 'Cancelled' };
+async function loadQuickShiftSummary() {
+  const { shifts } = await api('/manager/shifts/today-summary');
+  document.getElementById('quickShiftTable').innerHTML = shifts.length ? `
+    <table><thead><tr><th>Worker</th><th>Position</th><th>Client</th><th>Shift Time</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>${shifts.map((s) => `
+      <tr>
+        <td><div class="row-person"><div class="row-avatar">${initials(s.temp_name || '?')}</div><div><div class="rp-name">${s.temp_name || 'Unassigned'}</div><div class="rp-sub">${s.temp_email || ''}</div></div></div></td>
+        <td>${s.job_title}</td><td>${s.company_name}</td><td>${s.start_time}–${s.end_time}</td>
+        <td><span class="pill pill-${s.displayStatus}">${DISPLAY_STATUS_LABEL[s.displayStatus] || s.displayStatus}</span></td>
+        <td>
+          <button class="icon-btn" title="View" onclick="switchTab('shifts')">👁</button>
+          ${['scheduled','confirmed'].includes(s.status) ? `<button class="icon-btn" title="More" onclick="flagNoShow('${s.id}')">⋯</button>` : ''}
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts scheduled for today.</div>`;
+}
+
+async function loadBriefing() {
+  const b = await api('/manager/ai/briefing');
+  document.getElementById('briefingText').textContent = b.summary;
+}
+async function askAI() {
+  const q = document.getElementById('aiQuestion').value.trim();
+  if (!q) return;
+  document.getElementById('aiAnswer').textContent = 'Thinking…';
+  const { answer } = await api('/manager/ai/ask', { method: 'POST', body: { question: q } });
+  document.getElementById('aiAnswer').textContent = answer;
+}
+
+async function loadShifts() {
+  const { shifts } = await api('/manager/shifts');
+  document.getElementById('shiftsTable').innerHTML = shifts.length ? `
+    <table><thead><tr><th>Client</th><th>Job</th><th>Temp</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
+    <tbody>${shifts.map((s) => `
+      <tr>
+        <td>${s.company_name}</td><td>${s.job_title}</td><td>${s.temp_name || '<span style="color:var(--ink-soft)">Unassigned</span>'}</td>
+        <td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td><td>${pill(s.status)}</td>
+        <td>${['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts yet. Create your first shift.</div>`;
+}
+
+async function flagNoShow(id) {
+  if (!confirm('Flag this shift as a no-show and start the replacement search?')) return;
+  await api(`/manager/shifts/${id}/flag-no-show`, { method: 'POST' });
+  toast('No-show flagged — replacement search started');
+  loadShifts(); loadOverview(); loadReplacements(); loadEscalations();
+}
+
+async function loadReplacements() {
+  const { replacements } = await api('/manager/replacements');
+  document.getElementById('replacementsTable').innerHTML = replacements.length ? `
+    <table><thead><tr><th>Client</th><th>Job</th><th>Shift Date</th><th>Status</th><th>Candidates Notified</th></tr></thead>
+    <tbody>${replacements.map((r) => `<tr><td>${r.company_name}</td><td>${r.job_title}</td><td>${fmtDate(r.shift_date)}</td><td>${pill(r.status)}</td><td>${r.candidates_notified}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No replacement requests yet.</div>`;
+}
+
+async function loadEscalations() {
+  const { escalations } = await api('/manager/escalations');
+  document.getElementById('escalationsTable').innerHTML = escalations.length ? `
+    <table><thead><tr><th>Tier</th><th>Client</th><th>Trigger</th><th>Summary</th><th>Status</th><th></th></tr></thead>
+    <tbody>${escalations.map((e) => `
+      <tr>
+        <td><span class="pill pill-tier${e.tier}">Tier ${e.tier}</span></td>
+        <td>${e.company_name || '—'}</td><td>${e.triggered_by.replace(/_/g, ' ')}</td><td>${e.summary || ''}</td><td>${pill(e.status)}</td>
+        <td>
+          ${e.status === 'open' ? `<button class="btn btn-outline btn-sm" onclick="ackEsc('${e.id}')">Acknowledge</button>` : ''}
+          ${e.status !== 'resolved' ? `<button class="btn btn-primary btn-sm" onclick="resolveEsc('${e.id}')">Resolve</button>` : ''}
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No escalations. All clear.</div>`;
+}
+async function ackEsc(id) { await api(`/manager/escalations/${id}/acknowledge`, { method: 'POST' }); loadEscalations(); loadOverview(); }
+async function resolveEsc(id) { await api(`/manager/escalations/${id}/resolve`, { method: 'POST' }); loadEscalations(); loadOverview(); toast('Escalation resolved'); }
+
+async function loadConversations() {
+  const { conversations } = await api('/conversations');
+  const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
+  const badge = document.getElementById('msgBadge');
+  badge.style.display = totalUnread ? '' : 'none';
+  badge.textContent = totalUnread;
+  document.getElementById('convList').innerHTML = conversations.length ? conversations.map((c) => `
+    <div class="conv-item ${ACTIVE_CONV === c.id ? 'active' : ''}" onclick="openConv('${c.id}')">
+      <div class="subj">${c.subject || 'Conversation'} ${c.priority !== 'normal' ? `<span class="pill pill-tier${c.priority === 'critical' ? 3 : 2}">${c.priority}</span>` : ''} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
+      <div class="prev">${c.last_message || 'No messages yet'}</div>
+    </div>`).join('') : `<div class="empty">No conversations yet.</div>`;
+}
+
+async function openConv(id) {
+  ACTIVE_CONV = id;
+  const { conversation, messages, participants } = await api(`/conversations/${id}`);
+  document.getElementById('convPane').innerHTML = `
+    <div class="conv-header"><strong>${conversation.subject || 'Conversation'}</strong>
+      <div>${pill(conversation.status)} ${conversation.status !== 'resolved' ? `<button class="btn btn-outline btn-sm" onclick="resolveConv('${id}')">Mark resolved</button>` : ''}</div>
+    </div>
+    <div class="conv-messages" id="convMessages">${messages.map((m) => `
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} (${m.sender_role.replace('_',' ')}) · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+    <div class="conv-input"><input id="replyBody" placeholder="Type a reply…" onkeydown="if(event.key==='Enter')sendReply('${id}')"/><button class="btn btn-primary" onclick="sendReply('${id}')">Send</button></div>`;
+  const box = document.getElementById('convMessages'); box.scrollTop = box.scrollHeight;
+  loadConversations();
+}
+async function resolveConv(id) { await api(`/conversations/${id}/resolve`, { method: 'POST' }); openConv(id); }
+async function sendReply(id) {
+  const input = document.getElementById('replyBody');
+  const body = input.value.trim();
+  if (!body) return;
+  input.value = '';
+  await api(`/conversations/${id}/messages`, { method: 'POST', body: { body } });
+  openConv(id);
+}
+
+const AVATAR_COLORS = ['#2563eb', '#7c3aed', '#0f9d58', '#b45309', '#d92d20', '#0284c7'];
+function colorFor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+let COMPANIES_CACHE = [];
+async function loadClients() {
+  const { clients, pendingRequests } = await api('/manager/clients');
+  CLIENTS_CACHE = clients;
+
+  document.getElementById('clientsPendingArea').innerHTML = pendingRequests && pendingRequests.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin:0 0 10px">Pending Connection Requests</h3>
+      <p style="margin:0 0 12px;font-size:13px;color:var(--ink-soft)">These client companies asked to connect to your agency directly — approve to give them access to your shifts and messaging.</p>
+      <table><thead><tr><th>Company</th><th>Site</th><th>Requested</th><th></th></tr></thead>
+      <tbody>${pendingRequests.map((r) => `
+        <tr>
+          <td>${r.client_org_name}</td><td>${r.site_name || r.company_name || '—'}</td><td>${fmtDateTime(r.created_at)}</td>
+          <td>
+            <button class="btn btn-primary btn-sm" onclick="approveConnection('${r.linkId}')">Approve</button>
+            <button class="btn btn-outline btn-sm" onclick="declineConnection('${r.linkId}')">Decline</button>
+          </td>
+        </tr>`).join('')}</tbody></table>
+    </div>` : '';
+
+  const { companies } = await api('/manager/clients/roster');
+  COMPANIES_CACHE = companies;
+  renderClientsTable();
+}
+
+function renderClientsTable() {
+  const search = (document.getElementById('cmSearch').value || '').toLowerCase();
+  const statusFilter = document.getElementById('cmStatusFilter').value;
+
+  const rows = COMPANIES_CACHE.filter((co) => {
+    if (search && !co.companyName.toLowerCase().includes(search)) return false;
+    if (statusFilter && co.status !== statusFilter) return false;
+    return true;
+  });
+
+  document.getElementById('clientsTable').innerHTML = rows.length ? `
+    <table><thead><tr><th>Client</th><th>Sites</th><th>Supervisors</th><th>Active Workers</th><th>Issues</th><th>Replacements</th><th>Unread Chats</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>${rows.map((co) => {
+      const abbr = co.companyName.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+      return `
+      <tr>
+        <td><div class="co-row"><div class="co-avatar" style="background:${colorFor(co.companyName)}">${abbr}</div><div><div class="co-name">${co.companyName}</div></div></div></td>
+        <td>${co.sites}</td>
+        <td>${co.supervisors > 0 ? `<div class="mini-avatars">${Array.from({length: Math.min(co.supervisors,3)}).map(() => `<div class="mini-avatar">👤</div>`).join('')}</div>` : '—'}</td>
+        <td>${co.activeWorkers}</td>
+        <td class="cm-num ${co.issues > 0 ? 'bad' : ''}">${co.issues}</td>
+        <td class="cm-num ${co.replacements > 0 ? 'warn' : ''}">${co.replacements}</td>
+        <td class="cm-num ${co.unreadChats > 0 ? 'info' : ''}">${co.unreadChats}</td>
+        <td><span class="pill pill-${co.status}">${co.status.charAt(0).toUpperCase() + co.status.slice(1)}</span></td>
+        <td>
+          <button class="icon-btn" title="HR Contact" onclick="openHrContactModal('${co.primaryClientId}','${co.companyName.replace(/'/g,"\\'")}')">📁</button>
+          <button class="icon-btn" title="More">⋯</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`
+    : `<div class="empty">No clients match your filters.</div>`;
+}
+
+async function approveConnection(linkId) {
+  await api(`/manager/clients/connection-requests/${linkId}/approve`, { method: 'POST' });
+  toast('Connection approved'); loadClients();
+}
+async function declineConnection(linkId) {
+  if (!confirm('Decline this client\'s connection request?')) return;
+  await api(`/manager/clients/connection-requests/${linkId}/decline`, { method: 'POST' });
+  toast('Connection declined'); loadClients();
+}
+
+function openHrContactModal(clientId, companyName) {
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>Add HR Contact — ${companyName}</h3>
+    <p style="margin:0 0 14px;font-size:13px;color:var(--ink-soft)">If this person already has a Twanova client login (say, from another agency), we'll just connect it to your agency instead of creating a duplicate.</p>
+    <label>Full name</label><input id="h_fullName" />
+    <label>Email</label><input id="h_email" type="email" />
+    <label>Temporary password <span style="font-weight:400;color:var(--ink-soft)">(only used if they don't already have a login)</span></label>
+    <input id="h_tempPw" placeholder="Shared with the contact separately" />
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitHrContact('${clientId}')">Add HR Contact</button>`);
+}
+async function submitHrContact(clientId) {
+  const fullName = document.getElementById('h_fullName').value.trim();
+  const email = document.getElementById('h_email').value.trim();
+  const tempPassword = document.getElementById('h_tempPw').value;
+  if (!fullName || !email) return toast('Full name and email are required', true);
+  try {
+    const res = await api(`/manager/clients/${clientId}/hr-contacts`, { method: 'POST', body: { fullName, email, tempPassword } });
+    closeModal();
+    toast(res.linkedExisting ? 'Connected to their existing client login' : 'HR contact added');
+    loadClients();
+  } catch (e) { toast(e.message, true); }
+}
+
+let WORKERS_CACHE = [];
+let SELECTED_WORKER_ID = null;
+
+async function loadTemps() {
+  const { workers } = await api('/manager/temps/roster');
+  WORKERS_CACHE = workers;
+  TEMPS_CACHE = workers.filter((w) => !w.isInvite && w.status === 'active');
+
+  document.getElementById('wmBannerAvatars').innerHTML = workers.slice(0, 3).map((w) => `<div class="row-avatar">${initials(w.full_name)}</div>`).join('');
+
+  renderWorkersTable();
+}
+
+function renderWorkersTable() {
+  const search = (document.getElementById('wmSearch').value || '').toLowerCase();
+  const statusFilter = document.getElementById('wmStatusFilter').value;
+  const attendanceFilter = document.getElementById('wmAttendanceFilter').value;
+
+  let rows = WORKERS_CACHE.filter((w) => {
+    if (search && !w.full_name.toLowerCase().includes(search) && !w.email.toLowerCase().includes(search)) return false;
+    if (statusFilter && w.status !== statusFilter) return false;
+    if (attendanceFilter) {
+      const min = +attendanceFilter;
+      if (min === 0) { if (w.attendanceRate != null && w.attendanceRate >= 70) return false; }
+      else if (min === 70) { if (w.attendanceRate == null || w.attendanceRate < 70 || w.attendanceRate >= 90) return false; }
+      else if (min === 90) { if (w.attendanceRate == null || w.attendanceRate < 90) return false; }
+    }
+    return true;
+  });
+
+  document.getElementById('workersTable').innerHTML = rows.length ? `
+    <table><thead><tr><th>Worker Name</th><th>Status</th><th>Client</th><th>Next Shift</th><th>Attendance Rate</th><th>Actions</th></tr></thead>
+    <tbody>${rows.map((w) => `
+      <tr class="wm-row ${SELECTED_WORKER_ID === w.id ? 'active' : ''}" onclick="selectWorker('${w.id}')">
+        <td><div class="row-person"><div class="row-avatar">${initials(w.full_name)}</div><div><div class="rp-name">${w.full_name}</div><div class="rp-sub">${w.email}</div></div></div></td>
+        <td><span class="pill pill-${w.status}">${w.status.charAt(0).toUpperCase() + w.status.slice(1)}</span></td>
+        <td>${w.client_name || '—'}</td>
+        <td>${w.next_shift_date ? `${fmtDate(w.next_shift_date)} ${w.next_shift_time || ''}` : '—'}</td>
+        <td class="attendance-cell">${w.attendanceRate != null ? `
+          <div class="pct">${w.attendanceRate}%</div>
+          <div class="attendance-bar"><div class="attendance-bar-fill ${w.attendanceRate >= 90 ? 'att-high' : w.attendanceRate >= 70 ? 'att-mid' : 'att-low'}" style="width:${w.attendanceRate}%"></div></div>` : '<span style="color:var(--ink-soft)">—</span>'}</td>
+        <td onclick="event.stopPropagation()">
+          ${w.isInvite ? `<button class="btn btn-outline btn-sm" onclick="revokeInvite('${w.id}')">Revoke</button>`
+            : w.status === 'active' ? `<button class="icon-btn" title="Deactivate" onclick="deactivateTemp('${w.id}')">✏️</button><button class="icon-btn" title="Message" onclick="messageWorker('${w.id}')">💬</button>`
+            : `<button class="btn btn-primary btn-sm" onclick="reactivateTemp('${w.id}')">Reactivate</button>`}
+        </td>
+      </tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No workers match your filters.</div>`;
+
+  if (SELECTED_WORKER_ID) {
+    const stillVisible = rows.find((w) => w.id === SELECTED_WORKER_ID);
+    if (stillVisible) renderWorkerProfile(stillVisible); else { SELECTED_WORKER_ID = null; renderWorkerProfile(null); }
+  }
+}
+
+function selectWorker(id) {
+  SELECTED_WORKER_ID = SELECTED_WORKER_ID === id ? null : id;
+  renderWorkersTable();
+  const w = WORKERS_CACHE.find((x) => x.id === id);
+  renderWorkerProfile(SELECTED_WORKER_ID ? w : null);
+}
+
+function renderWorkerProfile(w) {
+  const panel = document.getElementById('workerProfilePanel');
+  if (!w) { panel.innerHTML = `<div class="wp-empty">Select a worker to see their profile.</div>`; return; }
+  panel.innerHTML = `
+    <div class="wp-avatar">${initials(w.full_name)}</div>
+    <div class="wp-name">${w.full_name}</div>
+    <div class="wp-role">${w.isInvite ? 'Pending invite' : 'Field worker'}</div>
+    <div class="wp-status"><span class="pill pill-${w.status}">${w.status.charAt(0).toUpperCase() + w.status.slice(1)}</span></div>
+    <div class="wp-contact">
+      <div>✉️ ${w.email}</div>
+      <div>📞 ${w.phone || '—'}</div>
+    </div>
+    <div class="wp-metrics">
+      <h4>Performance Metrics</h4>
+      <div class="wp-metric-row"><span>Overall Attendance</span><span class="wp-metric-val" style="color:${w.attendanceRate != null && w.attendanceRate < 70 ? 'var(--red)' : 'var(--green)'}">${w.attendanceRate != null ? w.attendanceRate + '%' : '—'}</span></div>
+      <div class="wp-metric-row"><span>Shifts Completed</span><span class="wp-metric-val">${w.shiftsCompleted}</span></div>
+      <div class="wp-metric-row"><span>Active Since</span><span class="wp-metric-val">${fmtDate(w.activeSince)}</span></div>
+    </div>
+    ${!w.isInvite ? `
+      <button class="btn btn-primary btn-block" onclick="openNewShiftModal('${w.id}')">Assign Shift</button>
+      <button class="btn btn-outline btn-block" onclick="messageWorker('${w.id}')">Send Direct Message</button>` : ''}`;
+}
+
+async function messageWorker(id) {
+  const w = WORKERS_CACHE.find((x) => x.id === id);
+  if (!w) return;
+  try {
+    const { conversationId } = await api('/conversations', { method: 'POST', body: { participantIds: [id], subject: `Direct message — ${w.full_name}` } });
+    switchTab('messages');
+    await loadConversations();
+    openConv(conversationId);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deactivateTemp(id) {
+  if (!confirm('Deactivate this worker? They will no longer be able to log in, but can be reactivated any time.')) return;
+  await api(`/manager/temps/${id}/deactivate`, { method: 'POST' });
+  toast('Worker deactivated'); loadTemps(); loadOverview();
+}
+async function reactivateTemp(id) {
+  await api(`/manager/temps/${id}/reactivate`, { method: 'POST' });
+  toast('Worker reactivated'); loadTemps(); loadOverview();
+}
+async function revokeInvite(id) {
+  if (!confirm('Revoke this invite? The link will stop working.')) return;
+  await api(`/manager/temps/invites/${id}/revoke`, { method: 'POST' });
+  toast('Invite revoked'); loadTemps();
+}
+
+async function loadAnalytics() {
+  const a = await api('/manager/analytics');
+  document.getElementById('analyticsStats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Shifts</div><div class="value">${a.totalShifts}</div></div>
+    <div class="stat-card ${a.noShowRate > 10 ? 'bad' : ''}"><div class="label">No-Show Rate</div><div class="value">${a.noShowRate}%</div></div>
+    <div class="stat-card good"><div class="label">Replacement Fill Rate</div><div class="value">${a.replacementFillRate}%</div></div>
+    <div class="stat-card"><div class="label">Avg Fill Time</div><div class="value">${a.avgReplacementFillMinutes != null ? a.avgReplacementFillMinutes + ' min' : '—'}</div></div>
+    <div class="stat-card"><div class="label">Messages (7d)</div><div class="value">${a.messagesLast7d}</div></div>`;
+}
+
+async function loadSites() {
+  SITES_LOADED = true;
+  const { sites } = await api('/manager/sites');
+  document.getElementById('sitesTable').innerHTML = sites.length ? `
+    <table><thead><tr><th>Site</th><th>Company</th><th>Address</th><th>Active Workers</th></tr></thead>
+    <tbody>${sites.map((s) => `<tr><td>${s.site_name || '—'}</td><td>${s.company_name}</td><td>${s.address || '—'}</td><td>${s.active_workers}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No sites yet. Add a client to register your first site.</div>`;
+}
+
+async function loadAttendance() {
+  ATTENDANCE_LOADED = true;
+  const from = document.getElementById('attFrom').value;
+  const to = document.getElementById('attTo').value;
+  const status = document.getElementById('attStatusFilter').value;
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  if (status) qs.set('status', status);
+  const { shifts, stats } = await api('/manager/attendance?' + qs.toString());
+  document.getElementById('attendanceStats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Shifts</div><div class="value">${stats.totalShifts}</div></div>
+    <div class="stat-card good"><div class="label">On Time %</div><div class="value">${stats.onTimePct}%</div></div>
+    <div class="stat-card warn"><div class="label">Late %</div><div class="value">${stats.latePct}%</div></div>
+    <div class="stat-card ${stats.noShowPct ? 'bad' : ''}"><div class="label">No Show %</div><div class="value">${stats.noShowPct}%</div></div>`;
+  document.getElementById('attendanceTable').innerHTML = shifts.length ? `
+    <table><thead><tr><th>Worker</th><th>Date</th><th>Shift Scheduled</th><th>Clock In</th><th>Clock Out</th><th>Status</th></tr></thead>
+    <tbody>${shifts.map((s) => `
+      <tr>
+        <td>${s.temp_name || '<span style="color:var(--ink-soft)">Unassigned</span>'}</td>
+        <td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td>
+        <td>${s.clock_in_at ? fmtDateTime(s.clock_in_at) : '--'}</td>
+        <td>${s.clock_out_at ? fmtDateTime(s.clock_out_at) : '--'}</td>
+        <td><span class="pill pill-${s.displayStatus}">${DISPLAY_STATUS_LABEL[s.displayStatus] || s.displayStatus}</span></td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts in this range.</div>`;
+}
+
+async function loadTeam() {
+  TEAM_LOADED = true;
+  const { team } = await api('/manager/team');
+  document.getElementById('teamTable').innerHTML = team.length ? `
+    <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>${team.map((m) => `
+      <tr>
+        <td>${m.full_name}</td><td>${m.email}</td><td>${m.role === 'agency_admin' ? 'Admin' : 'Manager'}</td>
+        <td>${m.active ? '<span class="pill pill-active">Active</span>' : '<span class="pill pill-inactive">Inactive</span>'}</td>
+        <td>${m.active && m.id !== CURRENT_USER.id ? `<button class="btn btn-outline btn-sm" onclick="deactivateTeamMember('${m.id}')">Deactivate</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No team members yet.</div>`;
+}
+async function deactivateTeamMember(id) {
+  if (!confirm('Deactivate this team member?')) return;
+  try { await api(`/manager/team/${id}/deactivate`, { method: 'POST' }); toast('Team member deactivated'); loadTeam(); }
+  catch (e) { toast(e.message, true); }
+}
+function openInviteTeamModal() {
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>Add Team Member</h3>
+    <label>Full name</label><input id="tm_fullName" />
+    <label>Email</label><input id="tm_email" type="email" />
+    <label>Role</label>
+    <select id="tm_role"><option value="agency_manager">Manager</option><option value="agency_admin">Admin</option></select>
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitInviteTeam()">Add Team Member</button>
+    <div id="teamInviteResult"></div>`);
+}
+async function submitInviteTeam() {
+  const fullName = document.getElementById('tm_fullName').value.trim();
+  const email = document.getElementById('tm_email').value.trim();
+  const role = document.getElementById('tm_role').value;
+  if (!fullName || !email) return toast('Full name and email are required', true);
+  try {
+    const { tempPassword } = await api('/manager/team/invite', { method: 'POST', body: { fullName, email, role } });
+    document.getElementById('teamInviteResult').innerHTML = `
+      <div style="margin-top:16px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--blue-light)">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Temporary password — share with ${fullName.split(' ')[0]}</div>
+        <input readonly value="${tempPassword}" onclick="this.select()" style="font-size:12px" /></div>`;
+    toast('Team member added'); loadTeam();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadOffices() {
+  OFFICES_LOADED = true;
+  const { offices } = await api('/manager/offices');
+  document.getElementById('officesTable').innerHTML = offices.length ? `
+    <table><thead><tr><th>Office</th><th>Address</th><th>Phone</th><th></th><th></th></tr></thead>
+    <tbody>${offices.map((o) => `
+      <tr><td>${o.name} ${o.is_hq ? '<span class="pill pill-active">HQ</span>' : ''}</td><td>${o.address || '—'}</td><td>${o.phone || '—'}</td>
+      <td></td><td><button class="btn btn-outline btn-sm" onclick="deleteOffice('${o.id}')">Remove</button></td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No offices yet. Add your headquarters to get started.</div>`;
+}
+function openNewOfficeModal() {
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>Add Office</h3>
+    <label>Office name</label><input id="o_name" placeholder="e.g. Seattle Hub" />
+    <label>Address</label><input id="o_address" />
+    <label>Phone</label><input id="o_phone" />
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="o_isHq" style="width:auto" /> This is our headquarters</label>
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitNewOffice()">Add Office</button>`);
+}
+async function submitNewOffice() {
+  const name = document.getElementById('o_name').value.trim();
+  if (!name) return toast('Office name is required', true);
+  await api('/manager/offices', { method: 'POST', body: { name, address: document.getElementById('o_address').value, phone: document.getElementById('o_phone').value, isHq: document.getElementById('o_isHq').checked } });
+  closeModal(); toast('Office added'); loadOffices();
+}
+async function deleteOffice(id) {
+  if (!confirm('Remove this office?')) return;
+  await api(`/manager/offices/${id}/delete`, { method: 'POST' });
+  toast('Office removed'); loadOffices();
+}
+
+async function loadSettings() {
+  SETTINGS_LOADED = true;
+  const { agency } = await api('/manager/settings');
+  document.getElementById('s_agencyName').value = agency.name;
+  document.getElementById('s_agencySlug').value = agency.slug;
+  document.getElementById('s_agencyPlan').value = agency.plan;
+}
+async function saveSettings() {
+  try {
+    await api('/manager/settings', { method: 'POST', body: { name: document.getElementById('s_agencyName').value } });
+    toast('Settings saved');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadTimeDisputes() {
+  DISPUTES_LOADED = true;
+  const { disputes } = await api('/manager/time-disputes');
+  DISPUTES_CACHE = disputes;
+  document.getElementById('disputesTable').innerHTML = disputes.length ? `
+    <table><thead><tr><th>Worker / Client</th><th>Reported</th><th>Client Claim</th><th>Status</th></tr></thead>
+    <tbody>${disputes.map((d) => `
+      <tr class="wm-row" onclick="selectDispute('${d.id}')">
+        <td>${d.temp_name || 'Unassigned'} / ${d.company_name}</td>
+        <td>${d.reported_hours} hrs</td><td>${d.client_claim_hours != null ? d.client_claim_hours + ' hrs' : '—'}</td>
+        <td><span class="pill pill-${d.status === 'pending' ? 'pending' : 'active'}">${d.status === 'pending' ? 'Pending' : 'Resolved'}</span></td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No time disputes. All hours reconcile cleanly.</div>`;
+}
+function selectDispute(id) {
+  const d = DISPUTES_CACHE.find((x) => x.id === id);
+  const panel = document.getElementById('disputeDetailPanel');
+  if (!d) return;
+  panel.innerHTML = `
+    <h4 style="margin-bottom:12px">Dispute — ${d.temp_name || 'Unassigned'} @ ${d.company_name}</h4>
+    <div style="background:var(--blue-light);border-radius:10px;padding:12px;margin-bottom:10px"><strong style="color:var(--blue);font-size:12px">WORKER CLAIM</strong><p style="margin-top:6px;font-size:13.5px">${d.worker_claim || 'No statement provided.'}</p></div>
+    <div style="background:#fef2f2;border-radius:10px;padding:12px;margin-bottom:14px"><strong style="color:var(--red);font-size:12px">CLIENT CLAIM</strong><p style="margin-top:6px;font-size:13.5px">${d.client_claim || 'No statement provided.'}</p></div>
+    ${d.status === 'pending' ? `
+      <button class="btn btn-primary btn-block" onclick="resolveDispute('${d.id}','worker_approved')">Approve Worker Hours (${d.reported_hours}h)</button>
+      <button class="btn btn-outline btn-block" style="margin-top:8px" onclick="resolveDispute('${d.id}','client_approved')">Approve Client Adjustment (${d.client_claim_hours ?? '—'}h)</button>`
+      : `<div class="empty">Resolved — ${d.resolved_hours}h approved (${d.resolution === 'client_approved' ? 'client adjustment' : 'worker hours'}).</div>`}`;
+}
+async function resolveDispute(id, resolution) {
+  try { await api(`/manager/time-disputes/${id}/resolve`, { method: 'POST', body: { resolution } }); toast('Dispute resolved'); loadTimeDisputes(); document.getElementById('disputeDetailPanel').innerHTML = `<div class="wp-empty">Select a dispute to see worker vs. client claims.</div>`; }
+  catch (e) { toast(e.message, true); }
+}
+
+// ===== Modals =====
+function openModal(html) { document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
+function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
+
+function openNewClientModal() {
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>Add Client</h3>
+    <label>Company name</label><input id="m_companyName" />
+    <label>Site name (optional)</label><input id="m_siteName" />
+    <label>Address (optional)</label><input id="m_address" />
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitNewClient()">Add Client</button>`);
+}
+async function submitNewClient() {
+  const companyName = document.getElementById('m_companyName').value.trim();
+  if (!companyName) return;
+  await api('/manager/clients', { method: 'POST', body: { companyName, siteName: document.getElementById('m_siteName').value, address: document.getElementById('m_address').value } });
+  closeModal(); toast('Client added'); loadClients(); loadOverview();
+}
+
+function openInviteTempModal() {
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>Invite Temp</h3>
+    <p style="margin:0 0 14px;font-size:13px;color:var(--ink-soft)">We'll generate an invite link. The temp opens it to set their own password and create their login — nothing is created until they do.</p>
+    <label>Full name</label><input id="m_fullName" />
+    <label>Email</label><input id="m_email" type="email" />
+    <label>Phone (optional)</label><input id="m_phone" />
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitInviteTemp()">Generate Invite Link</button>
+    <div id="inviteResult"></div>`);
+}
+async function submitInviteTemp() {
+  const fullName = document.getElementById('m_fullName').value.trim();
+  const email = document.getElementById('m_email').value.trim();
+  if (!fullName || !email) return toast('Full name and email are required', true);
+  try {
+    const { inviteUrl } = await api('/manager/temps/invite', { method: 'POST', body: { fullName, email, phone: document.getElementById('m_phone').value } });
+    document.getElementById('inviteResult').innerHTML = `
+      <div style="margin-top:16px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--blue-light)">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Invite link — send this to ${fullName.split(' ')[0]}</div>
+        <input readonly value="${inviteUrl}" onclick="this.select()" style="font-size:12px" />
+        <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="navigator.clipboard.writeText('${inviteUrl}');toast('Copied')">Copy link</button>
+      </div>`;
+    toast('Invite created'); loadTemps(); loadOverview();
+  } catch (e) { toast(e.message, true); }
+}
+
+function openNewShiftModal(preselectTempId) {
+  if (!CLIENTS_CACHE.length) return toast('Add a client first', true);
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>New Shift</h3>
+    <label>Client</label>
+    <select id="m_clientId">${CLIENTS_CACHE.map((c) => `<option value="${c.id}">${c.company_name}</option>`).join('')}</select>
+    <label>Temp (optional — leave unassigned to fill later)</label>
+    <select id="m_tempId"><option value="">Unassigned</option>${TEMPS_CACHE.map((w) => `<option value="${w.id}" ${preselectTempId === w.id ? 'selected' : ''}>${w.full_name}</option>`).join('')}</select>
+    <label>Job title</label><input id="m_jobTitle" placeholder="e.g. Warehouse Associate" />
+    <label>Shift date</label><input id="m_shiftDate" type="date" />
+    <div style="display:flex;gap:10px">
+      <div style="flex:1"><label>Start time</label><input id="m_startTime" type="time" /></div>
+      <div style="flex:1"><label>End time</label><input id="m_endTime" type="time" /></div>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitNewShift()">Create Shift</button>`);
+}
+async function submitNewShift() {
+  const body = {
+    clientId: document.getElementById('m_clientId').value,
+    tempId: document.getElementById('m_tempId').value || null,
+    jobTitle: document.getElementById('m_jobTitle').value.trim(),
+    shiftDate: document.getElementById('m_shiftDate').value,
+    startTime: document.getElementById('m_startTime').value,
+    endTime: document.getElementById('m_endTime').value
+  };
+  if (!body.jobTitle || !body.shiftDate || !body.startTime || !body.endTime) return toast('Fill in all shift fields', true);
+  try {
+    await api('/manager/shifts', { method: 'POST', body });
+    closeModal(); toast('Shift created'); loadShifts(); loadOverview();
+  } catch (e) { toast(e.message, true); }
+}
+
+boot();
+</script>
+</body>
+</html>

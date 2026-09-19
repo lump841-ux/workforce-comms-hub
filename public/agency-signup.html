@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Create your agency account — Twanova</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="mk-nav">
+  <div class="brand"><img src="/brand-logo-compact.png" alt="Twanova" style="height:28px;width:auto" /></div>
+  <div class="mk-links">
+    <span>Product</span><span>Features</span><span>Pricing</span><span>Enterprise</span><span>Resources</span>
+  </div>
+  <div class="mk-actions">
+    <a href="/login.html" style="color:var(--ink)">Login</a>
+  </div>
+</div>
+
+<div class="mk-hero">
+  <div>
+    <h1>Create Your Twanova Agency Account</h1>
+    <p class="mk-sub">Join workforce providers coordinating seamlessly. Deploy verified professionals, keep an attendance audit trail, and handle emergency standby in real-time.</p>
+    <form id="f">
+      <label>Agency name</label>
+      <input id="agencyName" required placeholder="e.g. Metro Staffing Solutions" />
+      <label>Full Name</label>
+      <input id="adminName" required placeholder="e.g. Sarah Jenkins" />
+      <label>Work Email Address</label>
+      <input id="email" type="email" required placeholder="e.g. sarah.jenkins@agency.com" />
+      <label>Password</label>
+      <input id="password" type="password" required minlength="6" placeholder="At least 6 characters" />
+      <button class="btn btn-primary btn-block" style="margin-top:20px" type="submit">Create Your Agency Account</button>
+      <div class="mk-agree">By clicking above, you agree to Twanova's Terms &amp; Conditions and privacy rules.</div>
+      <div id="msg"></div>
+    </form>
+    <div class="foot-link">Already have an account? <a href="/login.html">Sign in</a></div>
+  </div>
+  <div></div>
+</div>
+
+<div class="mk-features">
+  <h2>Everything You Need to Get Started</h2>
+  <div class="mk-sub2">Manage your shifts, communications, and workforce automatically.</div>
+  <div class="mk-feature-grid">
+    <div class="mk-feature-card">
+      <div class="num">1</div>
+      <h3>Real-Time Audit Trail</h3>
+      <p>No more paper trails. Verified check-ins, supervisor signoffs, and location tracking compiled continuously.</p>
+    </div>
+    <div class="mk-feature-card">
+      <div class="num">2</div>
+      <h3>Fast Replacements</h3>
+      <p>Instantly notify nearby pre-screened stand-by professionals to maintain on-site coverage.</p>
+    </div>
+    <div class="mk-feature-card">
+      <div class="num">3</div>
+      <h3>Central Communications Hub</h3>
+      <p>Consolidate shift updates, photo proofs, and client supervisor dialog into single threads.</p>
+    </div>
+  </div>
+</div>
+
+<div class="mk-footer">
+  © 2026 Twanova Tech. All rights reserved.
+</div>
+
+<script src="/app.js"></script>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  try {
+    await api('/agency-signup', {
+      method: 'POST',
+      body: {
+        agencyName: document.getElementById('agencyName').value,
+        adminName: document.getElementById('adminName').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      }
+    });
+    window.location.href = '/manager/dashboard.html';
+  } catch (err) {
+    msg.innerHTML = `<div class="err">${err.message}</div>`;
+  }
+});
+</script>
+</body>
+</html>

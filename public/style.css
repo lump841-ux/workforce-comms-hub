@@ -197,7 +197,7 @@ tr:last-child td{border-bottom:none}
 
 /* Split-hero auth pages (sign-in / create-account) */
 .split-auth{min-height:100vh;display:flex}
-.split-hero{flex:1;min-width:0;background:radial-gradient(1000px 700px at 20% 10%,#173f78 0%, var(--navy) 45%, #061024 100%);color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.split-hero{flex:1;min-width:0;background:linear-gradient(180deg, rgba(6,16,36,.55) 0%, rgba(6,16,36,.75) 60%, rgba(6,16,36,.92) 100%), url('https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1400&q=80') center/cover no-repeat;color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden}
 .split-hero::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 15% 25%, rgba(255,255,255,.12) 0, transparent 2px),radial-gradient(circle at 65% 15%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 40% 60%, rgba(255,255,255,.08) 0, transparent 2px),radial-gradient(circle at 80% 70%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 25% 85%, rgba(255,255,255,.08) 0, transparent 2px);background-size:400px 400px;opacity:.6}
 .split-hero .sh-brand{display:flex;align-items:center;gap:10px;position:relative;z-index:1}
 .split-hero .sh-brand .mark{width:36px;height:36px;border-radius:9px;background:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800}

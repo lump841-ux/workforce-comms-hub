@@ -197,18 +197,22 @@ tr:last-child td{border-bottom:none}
 
 /* Split-hero auth pages (sign-in / create-account) */
 .split-auth{min-height:100vh;display:flex}
-.split-hero{flex:1;min-width:0;background:linear-gradient(180deg, rgba(6,16,36,.55) 0%, rgba(6,16,36,.75) 60%, rgba(6,16,36,.92) 100%), url('https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1400&q=80') center/cover no-repeat;color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden}
-.split-hero::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 15% 25%, rgba(255,255,255,.12) 0, transparent 2px),radial-gradient(circle at 65% 15%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 40% 60%, rgba(255,255,255,.08) 0, transparent 2px),radial-gradient(circle at 80% 70%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 25% 85%, rgba(255,255,255,.08) 0, transparent 2px);background-size:400px 400px;opacity:.6}
-.split-hero .sh-brand{display:flex;align-items:center;gap:10px;position:relative;z-index:1}
+.split-hero{flex:1;min-width:0;background:var(--navy);color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.split-hero .hero-bg-layer{position:absolute;inset:0;z-index:0}
+.split-hero .hero-bg-layer .hero-slide{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;transition:opacity 1.4s ease}
+.split-hero .hero-bg-layer .hero-slide.active{opacity:1}
+.split-hero .hero-gradient{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg, rgba(6,16,36,.55) 0%, rgba(6,16,36,.75) 60%, rgba(6,16,36,.92) 100%)}
+.split-hero::before{content:"";position:absolute;inset:0;z-index:2;background-image:radial-gradient(circle at 15% 25%, rgba(255,255,255,.12) 0, transparent 2px),radial-gradient(circle at 65% 15%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 40% 60%, rgba(255,255,255,.08) 0, transparent 2px),radial-gradient(circle at 80% 70%, rgba(255,255,255,.1) 0, transparent 2px),radial-gradient(circle at 25% 85%, rgba(255,255,255,.08) 0, transparent 2px);background-size:400px 400px;opacity:.6}
+.split-hero .sh-brand{display:flex;align-items:center;gap:10px;position:relative;z-index:3}
 .split-hero .sh-brand .mark{width:36px;height:36px;border-radius:9px;background:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800}
 .split-hero .sh-brand .mark-img{height:34px;width:auto;background:#fff;border-radius:8px;padding:3px}
 .split-hero .sh-brand .name{font-weight:800;font-size:18px}
-.split-hero .sh-headline{font-size:44px;font-weight:800;line-height:1.1;margin-top:auto;position:relative;z-index:1;max-width:480px}
-.split-hero .sh-sub{font-size:15px;color:#c7d7ec;line-height:1.6;margin-top:18px;max-width:440px;position:relative;z-index:1}
-.split-hero .sh-foot{margin-top:auto;padding-top:40px;font-size:12.5px;color:#8fa8c7;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
-.split-hero .sh-dots{display:flex;gap:5px}
-.split-hero .sh-dots span{width:6px;height:6px;border-radius:50%;background:#3a5578}
-.split-hero .sh-dots span:first-child{background:var(--blue)}
+.split-hero .sh-headline{font-size:44px;font-weight:800;line-height:1.1;margin-top:auto;position:relative;z-index:3;max-width:480px}
+.split-hero .sh-sub{font-size:15px;color:#c7d7ec;line-height:1.6;margin-top:18px;max-width:440px;position:relative;z-index:3}
+.split-hero .sh-foot{margin-top:auto;padding-top:40px;font-size:12.5px;color:#8fa8c7;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:3}
+.split-hero .sh-dots{display:flex;gap:6px}
+.split-hero .sh-dots span{width:6px;height:6px;border-radius:50%;background:#3a5578;cursor:pointer;transition:background .3s ease,transform .3s ease}
+.split-hero .sh-dots span.active{background:var(--blue);transform:scale(1.25)}
 .split-form-pane{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:48px;background:#fff}
 .split-form-inner{width:100%;max-width:420px}
 .split-form-inner h1{font-size:30px;font-weight:800;color:var(--ink)}

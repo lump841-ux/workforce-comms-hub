@@ -9,12 +9,18 @@
 <body>
 <div class="split-auth">
   <div class="split-hero">
+    <div class="hero-bg-layer" id="heroBgLayer">
+      <div class="hero-slide active" style="background-image:url('https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1400&q=80')"></div>
+      <div class="hero-slide" style="background-image:url('https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1400&q=80')"></div>
+      <div class="hero-slide" style="background-image:url('https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1400&q=80')"></div>
+    </div>
+    <div class="hero-gradient"></div>
     <div class="sh-brand"><img src="/images/twanova-icon-crop.png" alt="Twanova" class="mark-img" /><div class="name">Twanova</div></div>
     <div class="sh-headline">Workforce Communications Hub.</div>
     <div class="sh-sub">Empower your dispatchers to assign shifts, handle sudden no-shows, and maintain strict SLA safety compliance with our intelligent workforce hub.</div>
     <div class="sh-foot">
       <div>Trusted by 40+ national construction firms</div>
-      <div class="sh-dots"><span></span><span></span><span></span></div>
+      <div class="sh-dots" id="heroDots"><span class="active" data-i="0"></span><span data-i="1"></span><span data-i="2"></span></div>
     </div>
   </div>
   <div class="split-form-pane">
@@ -41,6 +47,18 @@
 </div>
 <script src="/app.js"></script>
 <script>
+(function(){
+  const slides = document.querySelectorAll('#heroBgLayer .hero-slide');
+  const dots = document.querySelectorAll('#heroDots span');
+  let idx = 0;
+  function show(i){
+    slides.forEach((s, n) => s.classList.toggle('active', n === i));
+    dots.forEach((d, n) => d.classList.toggle('active', n === i));
+    idx = i;
+  }
+  dots.forEach(d => d.addEventListener('click', () => show(parseInt(d.dataset.i, 10))));
+  setInterval(() => show((idx + 1) % slides.length), 5000);
+})();
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const msg = document.getElementById('msg');

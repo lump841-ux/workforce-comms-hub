@@ -2,36 +2,40 @@ const { run, all, get } = require('../database/db');
 const { id } = require('./ids');
 const { notifyMany } = require('./notify');
 const { logAudit } = require('./audit');
+const { getSupervisorsForClient, isAfterHours } = require('./supervisors');
 
 // Tier 1 = agency managers on the shift's agency
 // Tier 2 = agency managers + agency admins (escalated after time threshold or repeat issue)
-// Tier 3 = agency admins + client HR contacts on that client account (critical)
+// Tier 3 = agency admins + client HR contacts on that client account (critical — this is
+// how EMERGENCY and other "everyone needs to know right now" events reach the supervisor
+// immediately, per the three-way communication model)
 function createEscalation({ agencyId, clientId, shiftId, conversationId, triggeredBy, tier = 1, summary }) {
   const escId = id('esc');
+  const afterHours = isAfterHours() ? 1 : 0;
   run(
-    `INSERT INTO escalations (id, agency_id, client_id, shift_id, conversation_id, triggered_by, tier, summary)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    [escId, agencyId, clientId || null, shiftId || null, conversationId || null, triggeredBy, tier, summary || null]
+    `INSERT INTO escalations (id, agency_id, client_id, shift_id, conversation_id, triggered_by, tier, summary, after_hours)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [escId, agencyId, clientId || null, shiftId || null, conversationId || null, triggeredBy, tier, summary || null, afterHours]
   );
 
   const recipients = resolveRecipients({ agencyId, clientId, tier });
+  const afterHoursNote = afterHours ? ' (after hours)' : '';
   notifyMany(recipients.map((r) => r.id), {
     type: 'escalation',
-    title: `Escalation (Tier ${tier}): ${triggeredBy.replace(/_/g, ' ')}`,
+    title: `Escalation (Tier ${tier}): ${triggeredBy.replace(/_/g, ' ')}${afterHoursNote}`,
     body: summary || 'A new escalation requires your attention.',
     link: `/manager/dashboard.html#escalations`
   });
 
-  logAudit({ agencyId, action: 'escalation_created', entityType: 'escalation', entityId: escId, meta: { tier, triggeredBy } });
+  logAudit({ agencyId, action: 'escalation_created', entityType: 'escalation', entityId: escId, meta: { tier, triggeredBy, afterHours: !!afterHours } });
   return escId;
 }
 
 function resolveRecipients({ agencyId, clientId, tier }) {
   if (tier >= 3 && clientId) {
-    return all(
-      `SELECT id FROM users WHERE (agency_id = ? AND role = 'agency_admin') OR (client_id = ? AND role = 'client_hr')`,
-      [agencyId, clientId]
-    );
+    const admins = all(`SELECT id FROM users WHERE agency_id = ? AND role = 'agency_admin'`, [agencyId]);
+    const supervisors = getSupervisorsForClient(clientId);
+    return [...admins, ...supervisors];
   }
   if (tier === 2) {
     return all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [agencyId]);

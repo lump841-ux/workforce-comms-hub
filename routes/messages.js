@@ -5,9 +5,61 @@ const { requireAuth } = require('../middleware/auth');
 const { notifyMany } = require('../services/notify');
 const { createEscalation } = require('../services/escalation');
 const { logAudit } = require('../services/audit');
+const { getSupervisorsForClient } = require('../services/supervisors');
 
 const router = express.Router();
 router.use(requireAuth);
+
+// Finds (or starts) a direct conversation between this temp and the client
+// supervisor(s) assigned to a given shift — powers the "Message Supervisor"
+// button so a worker never has to know a supervisor's name/email, just tap
+// the shift and send.
+router.post('/message-supervisor', (req, res) => {
+  const u = req.session.user;
+  if (u.role !== 'temp') return res.status(403).json({ error: 'Only temps can use this shortcut' });
+  const { shiftId, firstMessage } = req.body;
+  if (!shiftId) return res.status(400).json({ error: 'shiftId is required' });
+
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [shiftId, u.id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  const supervisors = getSupervisorsForClient(shift.client_id);
+  if (supervisors.length === 0) return res.status(404).json({ error: 'No supervisor is assigned to this client yet' });
+
+  // Reuse an existing open direct conversation for this shift if one exists,
+  // so repeated taps don't fragment the thread.
+  const existing = get(
+    `SELECT c.id FROM conversations c
+     JOIN conversation_participants cp ON cp.conversation_id = c.id
+     WHERE c.shift_id = ? AND c.type = 'direct' AND cp.user_id = ? LIMIT 1`,
+    [shiftId, u.id]
+  );
+  if (existing) {
+    if (firstMessage) {
+      run(`INSERT INTO messages (id, conversation_id, sender_id, body) VALUES (?,?,?,?)`, [id('msg'), existing.id, u.id, firstMessage]);
+      run(`UPDATE conversations SET updated_at = datetime('now') WHERE id = ?`, [existing.id]);
+      const others = all('SELECT user_id FROM conversation_participants WHERE conversation_id = ? AND user_id != ?', [existing.id, u.id]).map((r) => r.user_id);
+      notifyMany(others, { type: 'message', title: `New message from ${u.full_name}`, body: firstMessage.slice(0, 140), link: `/#/conversation/${existing.id}` });
+    }
+    return res.json({ ok: true, conversationId: existing.id });
+  }
+
+  const convId = id('cnv');
+  run(
+    `INSERT INTO conversations (id, agency_id, client_id, type, subject, shift_id, created_by, priority)
+     VALUES (?,?,?, 'direct', 'Message to Supervisor', ?, ?, 'normal')`,
+    [convId, u.agency_id, shift.client_id, shiftId, u.id]
+  );
+  const allParticipants = [...new Set([u.id, ...supervisors.map((s) => s.id)])];
+  for (const pid of allParticipants) {
+    run(`INSERT INTO conversation_participants (id, conversation_id, user_id) VALUES (?,?,?)`, [id('cvp'), convId, pid]);
+  }
+  if (firstMessage) {
+    run(`INSERT INTO messages (id, conversation_id, sender_id, body) VALUES (?,?,?,?)`, [id('msg'), convId, u.id, firstMessage]);
+    notifyMany(supervisors.map((s) => s.id), { type: 'message', title: `New message from ${u.full_name}`, body: firstMessage.slice(0, 140), link: `/#/conversation/${convId}` });
+  }
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_messaged_supervisor', entityType: 'conversation', entityId: convId });
+  res.json({ ok: true, conversationId: convId });
+});
 
 // List conversations for current user
 router.get('/conversations', (req, res) => {

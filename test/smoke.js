@@ -259,6 +259,66 @@ async function main() {
   const tier3 = escalationsAfterRaise.body.escalations.find((e) => e.tier === 3);
   assert(!!tier3, 'critical client complaint created a Tier 3 escalation');
 
+  // 16. Three-way communication features: emergency, arrived, message-supervisor,
+  // worker-initiated time dispute, supervisor quick actions, shift timeline.
+  const supStamp = Date.now();
+  const supInvite = await request(server, {
+    method: 'POST', path: `/api/manager/clients/${clientId}/hr-contacts`, cookie: adminCookie,
+    body: { fullName: 'Sam Supervisor', email: `sup${supStamp}@smoke.test`, tempPassword: 'suppass123' }
+  });
+  assert(supInvite.status === 200 && supInvite.body.ok, 'agency invites a fresh supervisor for the client');
+
+  const supLogin = await request(server, { method: 'POST', path: '/api/auth/login', body: { email: `sup${supStamp}@smoke.test`, password: 'suppass123' } });
+  assert(supLogin.status === 200 && supLogin.body.user.role === 'client_hr', 'new supervisor logs in');
+  const supCookie = firstCookie(supLogin.setCookie);
+
+  const careTeam = await request(server, { method: 'GET', path: `/api/temp/shifts/${shiftId}/care-team`, cookie: tempCookie });
+  assert(careTeam.status === 200 && careTeam.body.supervisors.some((s) => s.email === `sup${supStamp}@smoke.test`), 'worker can see the assigned supervisor via care-team');
+
+  const arrivedRes = await request(server, { method: 'POST', path: `/api/temp/shifts/${shiftId}/arrived`, cookie: tempCookie });
+  assert(arrivedRes.status === 200 && arrivedRes.body.ok, 'worker taps I\'ve Arrived');
+
+  const lateRes = await request(server, { method: 'POST', path: `/api/temp/shifts/${shiftId}/running-late`, cookie: tempCookie, body: { minutesLate: 15, eta: '8:15 AM' } });
+  assert(lateRes.status === 200 && lateRes.body.ok, 'worker reports running late with ETA');
+  const supNotifsAfterLate = await request(server, { method: 'GET', path: '/api/notifications', cookie: supCookie });
+  assert(supNotifsAfterLate.body.notifications.some((n) => n.title.includes('running late')), 'supervisor is notified when worker reports running late');
+
+  const emergencyRes = await request(server, { method: 'POST', path: `/api/temp/shifts/${shiftId}/emergency`, cookie: tempCookie, body: { details: 'Facility gate is locked, no one answering' } });
+  assert(emergencyRes.status === 200 && emergencyRes.body.ok, 'worker triggers EMERGENCY');
+  const escalationsAfterEmergency = await request(server, { method: 'GET', path: '/api/manager/escalations', cookie: adminCookie });
+  const emergencyEsc = escalationsAfterEmergency.body.escalations.find((e) => e.triggered_by === 'emergency');
+  assert(!!emergencyEsc && emergencyEsc.tier === 3, 'emergency creates a Tier 3 escalation reaching agency + supervisor');
+  const supNotifsAfterEmergency = await request(server, { method: 'GET', path: '/api/notifications', cookie: supCookie });
+  assert(supNotifsAfterEmergency.body.notifications.some((n) => n.title.includes('EMERGENCY')), 'supervisor is notified of the emergency immediately');
+
+  const msgSupRes = await request(server, {
+    method: 'POST', path: '/api/message-supervisor', cookie: tempCookie,
+    body: { shiftId, firstMessage: 'Can you let me in the side door?' }
+  });
+  assert(msgSupRes.status === 200 && msgSupRes.body.ok, 'worker messages supervisor directly');
+  const supConvo = await request(server, { method: 'GET', path: `/api/conversations/${msgSupRes.body.conversationId}`, cookie: supCookie });
+  assert(supConvo.status === 200 && supConvo.body.messages.some((m) => m.body.includes('side door')), 'supervisor receives the direct message');
+
+  const workerDisputeRes = await request(server, {
+    method: 'POST', path: `/api/temp/shifts/${shiftId}/time-dispute`, cookie: tempCookie,
+    body: { category: 'missing_hours', reportedHours: 8, workerClaim: 'Clocked in but it never saved' }
+  });
+  assert(workerDisputeRes.status === 200 && workerDisputeRes.body.ok, 'worker opens a structured time dispute');
+  const disputeVerifyRes = await request(server, { method: 'POST', path: `/api/client/time-disputes/${workerDisputeRes.body.disputeId}/verify`, cookie: supCookie });
+  assert(disputeVerifyRes.status === 200 && disputeVerifyRes.body.ok, 'supervisor verifies the time dispute');
+  const disputeResolveRes = await request(server, { method: 'POST', path: `/api/manager/time-disputes/${workerDisputeRes.body.disputeId}/resolve`, cookie: adminCookie, body: { resolution: 'worker_approved' } });
+  assert(disputeResolveRes.status === 200 && disputeResolveRes.body.ok, 'agency resolves the verified time dispute');
+
+  const todayWorkers = await request(server, { method: 'GET', path: '/api/client/today', cookie: supCookie });
+  assert(todayWorkers.status === 200, 'supervisor loads Today\'s Workers view');
+
+  const confirmArrivalRes = await request(server, { method: 'POST', path: `/api/client/shifts/${shiftId}/confirm-arrival`, cookie: supCookie });
+  assert(confirmArrivalRes.status === 200 && confirmArrivalRes.body.ok, 'supervisor confirms worker arrival');
+
+  const timelineRes = await request(server, { method: 'GET', path: `/api/temp/shifts/${shiftId}/timeline`, cookie: tempCookie });
+  assert(timelineRes.status === 200 && Array.isArray(timelineRes.body.events) && timelineRes.body.events.length > 5, 'shift timeline aggregates events from across the whole lifecycle');
+  assert(timelineRes.body.events.some((e) => e.type === 'escalation' && e.label.includes('emergency')), 'shift timeline includes the emergency event');
+
   // 13. Role enforcement — temp cannot hit manager routes
   const forbidden = await request(server, { method: 'GET', path: '/api/manager/overview', cookie: tempCookie });
   assert(forbidden.status === 403, 'temp is forbidden from manager-only routes');

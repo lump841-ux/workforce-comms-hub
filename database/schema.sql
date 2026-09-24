@@ -112,6 +112,14 @@ CREATE TABLE IF NOT EXISTS shifts (
   notes TEXT,
   en_route_at TEXT,
   running_late_at TEXT,
+  late_eta TEXT,
+  arrived_at TEXT,
+  supervisor_confirmed_arrival_at TEXT,
+  supervisor_confirmed_arrival_by TEXT REFERENCES users(id),
+  reported_absent_at TEXT,
+  reported_absent_by TEXT REFERENCES users(id),
+  left_early_at TEXT,
+  left_early_by TEXT REFERENCES users(id),
   cancel_reason_category TEXT,
   cancel_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -133,6 +141,8 @@ CREATE TABLE IF NOT EXISTS shift_photos (
   id TEXT PRIMARY KEY,
   shift_id TEXT NOT NULL REFERENCES shifts(id),
   temp_id TEXT NOT NULL REFERENCES users(id),
+  uploaded_by TEXT REFERENCES users(id),
+  uploader_role TEXT NOT NULL DEFAULT 'temp', -- temp | client_hr
   data_url TEXT NOT NULL,
   caption TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -212,9 +222,10 @@ CREATE TABLE IF NOT EXISTS escalations (
   client_id TEXT REFERENCES clients(id),
   shift_id TEXT REFERENCES shifts(id),
   conversation_id TEXT REFERENCES conversations(id),
-  triggered_by TEXT NOT NULL, -- no_show | unresolved_message | client_complaint | manual
+  triggered_by TEXT NOT NULL, -- no_show | unresolved_message | client_complaint | manual | emergency | running_late | time_dispute | workplace_issue
   tier INTEGER NOT NULL DEFAULT 1, -- 1=manager, 2=agency_admin, 3=client_hr+agency_admin
   status TEXT NOT NULL DEFAULT 'open', -- open | acknowledged | resolved
+  after_hours INTEGER NOT NULL DEFAULT 0,
   summary TEXT,
   assigned_to TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -277,14 +288,19 @@ CREATE TABLE IF NOT EXISTS time_disputes (
   id TEXT PRIMARY KEY,
   agency_id TEXT NOT NULL REFERENCES agencies(id),
   shift_id TEXT NOT NULL REFERENCES shifts(id),
+  category TEXT NOT NULL DEFAULT 'other', -- wrong_clock_in | wrong_clock_out | missing_hours | break_issue | other
+  reported_by TEXT REFERENCES users(id),
   reported_hours REAL NOT NULL,
   client_claim_hours REAL,
   worker_claim TEXT,
   client_claim TEXT,
-  status TEXT NOT NULL DEFAULT 'pending', -- pending | resolved
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | supervisor_verified | resolved
   resolution TEXT, -- worker_approved | client_approved | manual
   resolved_hours REAL,
   resolved_by TEXT REFERENCES users(id),
+  supervisor_verified_at TEXT,
+  supervisor_verified_by TEXT REFERENCES users(id),
+  photo_data_url TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   resolved_at TEXT
 );

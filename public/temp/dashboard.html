@@ -13,6 +13,8 @@
   <div class="mt-title" id="mtTitle">Dashboard</div>
 </div>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleMobileNav(false)"></div>
+<button id="emergencyFab" onclick="openEmergencyModal()" title="Emergency — need help now"
+  style="position:fixed;right:18px;bottom:18px;z-index:500;width:64px;height:64px;border-radius:50%;background:#c0392b;color:#fff;border:none;box-shadow:0 4px 16px rgba(192,57,43,.4);font-size:26px;cursor:pointer;">🚨</button>
 <div class="app-shell">
   <div class="sidebar" id="sidebarNav">
     <div class="brand"><img src="../brand-logo-compact.png" alt="Twanova" style="height:32px;width:auto;" /><div><div class="sub">Worker Hub</div></div></div>
@@ -21,6 +23,7 @@
     <a class="navlink" data-tab="open" data-icon="🟢"><span class="nl-icon">🟢</span><span class="nl-label">Open Shifts <span id="openBadge" class="badge" style="display:none">0</span></span></a>
     <a class="navlink" data-tab="messages" data-icon="💬"><span class="nl-icon">💬</span><span class="nl-label">Messages <span id="msgBadge" class="badge" style="display:none">0</span></span></a>
     <a class="navlink" data-tab="issues" data-icon="⚠️"><span class="nl-icon">⚠️</span><span class="nl-label">Report Issue</span></a>
+    <a class="navlink" data-tab="timedispute" data-icon="⏱️"><span class="nl-icon">⏱️</span><span class="nl-label">Time Problem</span></a>
     <a class="navlink" data-tab="photos" data-icon="📷"><span class="nl-icon">📷</span><span class="nl-label">Photo Proof</span></a>
     <a class="navlink" data-tab="notifications" data-icon="🔔"><span class="nl-icon">🔔</span><span class="nl-label">Notifications <span id="notifBadge" class="badge" style="display:none">0</span></span></a>
     <a class="navlink" data-tab="profile" data-icon="👤"><span class="nl-icon">👤</span><span class="nl-label">Profile</span></a>
@@ -37,6 +40,28 @@
       <div class="card" id="breakCard" style="display:none;margin-top:16px">
         <h3 style="margin-top:0">Break</h3>
         <div id="breakStatus"></div>
+      </div>
+    </div>
+
+    <div id="tab-timedispute" style="display:none">
+      <div class="page-head"><div><div class="page-title">Report a Time Problem</div><div class="page-sub">Wrong clock-in/out, missing hours, or a break issue on a shift</div></div></div>
+      <div class="card" style="max-width:560px">
+        <label>Shift</label>
+        <select id="tdShift"></select>
+        <label>What's wrong?</label>
+        <select id="tdCategory">
+          <option value="wrong_clock_in">Wrong clock-in time</option>
+          <option value="wrong_clock_out">Wrong clock-out time</option>
+          <option value="missing_hours">Missing hours</option>
+          <option value="break_issue">Break issue</option>
+          <option value="other">Other</option>
+        </select>
+        <label>Hours you actually worked</label>
+        <input type="number" step="0.25" id="tdHours" placeholder="8" />
+        <label>Details (optional)</label>
+        <textarea id="tdClaim" rows="4" placeholder="What happened?"></textarea>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitTimeDispute()">Send to Agency</button>
+        <div id="tdMsg"></div>
       </div>
     </div>
 
@@ -148,7 +173,7 @@ function toggleMobileNav(force) {
   backdrop.classList.toggle('open', open);
 }
 
-const TAB_TITLES = { today: 'Dashboard', shifts: 'My Shifts', open: 'Open Shifts', messages: 'Messages', issues: 'Report Issue', photos: 'Photo Proof', notifications: 'Notifications', profile: 'Profile' };
+const TAB_TITLES = { today: 'Dashboard', shifts: 'My Shifts', open: 'Open Shifts', messages: 'Messages', issues: 'Report Issue', timedispute: 'Time Problem', photos: 'Photo Proof', notifications: 'Notifications', profile: 'Profile' };
 const TABS = Object.keys(TAB_TITLES);
 
 function switchTab(tab) {
@@ -158,6 +183,7 @@ function switchTab(tab) {
   if (mt) mt.textContent = TAB_TITLES[tab] || 'Worker Hub';
   if (tab === 'photos') populatePhotoShiftPicker();
   if (tab === 'issues') populateIssueShiftPicker();
+  if (tab === 'timedispute') populateTimeDisputeShiftPicker();
 }
 
 // ============ TODAY / NEXT SHIFT ============
@@ -191,16 +217,22 @@ function renderToday() {
   }
   if (shift.status === 'confirmed' && isToday) {
     actions += `<button class="btn btn-outline btn-sm" onclick="onMyWay('${shift.id}')" ${shift.en_route_at ? 'disabled' : ''}>${shift.en_route_at ? 'On my way ✓' : 'On My Way'}</button>`;
+    actions += `<button class="btn btn-outline btn-sm" onclick="markArrived('${shift.id}')" ${shift.arrived_at ? 'disabled' : ''}>${shift.arrived_at ? "Arrived ✓" : "I've Arrived"}</button>`;
     actions += `<button class="btn btn-outline btn-sm" onclick="openRunningLateModal('${shift.id}')">Running Late</button>`;
     actions += `<button class="btn btn-primary btn-sm" onclick="clockIn('${shift.id}')">Clock In</button>`;
   }
   if (shift.status === 'in_progress') {
+    actions += `<button class="btn btn-outline btn-sm" onclick="markArrived('${shift.id}')" ${shift.arrived_at ? 'disabled' : ''}>${shift.arrived_at ? "Arrived ✓" : "I've Arrived"}</button>`;
     actions += `<button class="btn btn-outline btn-sm" onclick="switchTab('photos')">Upload Photo Proof</button>`;
     actions += `<button class="btn btn-primary btn-sm" onclick="clockOut('${shift.id}')">Clock Out</button>`;
   }
   if (['scheduled', 'confirmed'].includes(shift.status)) {
     actions += `<button class="btn btn-outline btn-sm" onclick="openCantMakeItModal('${shift.id}')" style="border-color:var(--danger,#c0392b);color:var(--danger,#c0392b)">Can't Make It</button>`;
   }
+  actions += `<button class="btn btn-outline btn-sm" onclick="openMessageSupervisorModal('${shift.id}')">Message Supervisor</button>`;
+  actions += `<button class="btn btn-outline btn-sm" onclick="openShiftTimeline('${shift.id}')">View Shift Timeline</button>`;
+
+  const mapUrl = shift.address ? `https://maps.google.com/?q=${encodeURIComponent(shift.address)}` : null;
 
   card.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
@@ -208,12 +240,16 @@ function renderToday() {
         <div style="font-size:18px;font-weight:600">${shift.job_title}</div>
         <div style="color:var(--ink-soft);margin-top:2px">${shift.company_name}${shift.site_name ? ' · ' + shift.site_name : ''}</div>
         <div style="color:var(--ink-soft);margin-top:2px">${fmtDate(shift.shift_date)} · ${shift.start_time}–${shift.end_time}</div>
-        ${shift.running_late_at ? `<div style="color:#b8860b;margin-top:4px;font-size:13px">⚠ You reported running late</div>` : ''}
+        ${shift.address ? `<div style="color:var(--ink-soft);margin-top:2px">📍 ${shift.address} ${mapUrl ? `· <a href="${mapUrl}" target="_blank" rel="noopener">Directions</a>` : ''}</div>` : ''}
+        <div id="supervisorLine" style="color:var(--ink-soft);margin-top:2px;font-size:13px">Loading supervisor…</div>
+        ${shift.running_late_at ? `<div style="color:#b8860b;margin-top:4px;font-size:13px">⚠ You reported running late${shift.late_eta ? ` — ETA ${shift.late_eta}` : ''}</div>` : ''}
       </div>
       <div>${pill(shift.status)}</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">${actions || '<span style="color:var(--ink-soft);font-size:13px">No actions available right now.</span>'}</div>
   `;
+
+  loadCareTeam(shift.id);
 
   if (shift.status === 'in_progress') {
     breakCard.style.display = '';
@@ -221,6 +257,120 @@ function renderToday() {
   } else {
     breakCard.style.display = 'none';
   }
+}
+
+async function loadCareTeam(shiftId) {
+  const el = document.getElementById('supervisorLine');
+  if (!el) return;
+  try {
+    const { supervisors } = await api(`/temp/shifts/${shiftId}/care-team`);
+    el.textContent = supervisors.length ? `👤 Supervisor: ${supervisors.map((s) => s.full_name).join(', ')}` : 'No supervisor assigned yet';
+  } catch (e) { el.textContent = ''; }
+}
+
+async function markArrived(id) {
+  try {
+    await api(`/temp/shifts/${id}/arrived`, { method: 'POST' });
+    toast("Arrival noted — agency and supervisor notified");
+    loadShifts();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ============ EMERGENCY ============
+function openEmergencyModal() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const shift = ALL_SHIFTS.upcoming.find((s) => s.shift_date === todayStr) || ALL_SHIFTS.upcoming[0];
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3 style="color:#c0392b">🚨 Emergency / Need Help</h3>
+        <p style="margin:0 0 12px;font-size:13px;color:var(--ink-soft)">This immediately alerts your agency AND the client supervisor, any time of day — even if the office is closed.</p>
+        ${shift ? `<div style="font-size:13px;color:var(--ink-soft);margin-bottom:10px">Re: ${shift.job_title} at ${shift.company_name}</div>` : ''}
+        <label>What's happening?</label>
+        <textarea id="emergencyDetails" rows="4" placeholder="Describe what's going on…" autofocus></textarea>
+        <button class="btn btn-primary" style="margin-top:12px;background:#c0392b;border-color:#c0392b" onclick="submitEmergency('${shift ? shift.id : ''}')">Send Emergency Alert</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitEmergency(shiftId) {
+  const details = document.getElementById('emergencyDetails').value.trim();
+  try {
+    if (shiftId) {
+      await api(`/temp/shifts/${shiftId}/emergency`, { method: 'POST', body: { details } });
+    } else {
+      await api('/temp/issues', { method: 'POST', body: { category: 'emergency', description: `EMERGENCY: ${details}` } });
+    }
+    document.querySelector('.modal-backdrop').remove();
+    toast('Emergency alert sent — agency and supervisor notified');
+    loadShifts(); loadConversations();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ============ MESSAGE SUPERVISOR ============
+function openMessageSupervisorModal(shiftId) {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Message Supervisor</h3>
+        <textarea id="supMsgBody" rows="4" placeholder="What do you need?"></textarea>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitMessageSupervisor('${shiftId}')">Send</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitMessageSupervisor(shiftId) {
+  const body = document.getElementById('supMsgBody').value.trim();
+  if (!body) return;
+  try {
+    await api('/message-supervisor', { method: 'POST', body: { shiftId, firstMessage: body } });
+    document.querySelector('.modal-backdrop').remove();
+    toast('Sent to supervisor');
+    loadConversations();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ============ SHIFT TIMELINE ============
+async function openShiftTimeline(shiftId) {
+  const { events } = await api(`/temp/shifts/${shiftId}/timeline`);
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:480px">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Shift Timeline</h3>
+        <div style="max-height:420px;overflow-y:auto">
+          ${events.length ? events.map((e) => `
+            <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+              <div style="font-size:13px">${e.label}</div>
+              <div style="font-size:11px;color:var(--ink-soft)">${fmtDateTime(e.at)}</div>
+            </div>`).join('') : '<div class="empty">No events yet.</div>'}
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// ============ TIME DISPUTE ============
+function populateTimeDisputeShiftPicker() {
+  const sel = document.getElementById('tdShift');
+  const shifts = ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history);
+  sel.innerHTML = shifts.map((s) => `<option value="${s.id}">${s.job_title} — ${fmtDate(s.shift_date)} (${s.company_name})</option>`).join('') || '<option value="">No shifts yet</option>';
+}
+async function submitTimeDispute() {
+  const shiftId = document.getElementById('tdShift').value;
+  const category = document.getElementById('tdCategory').value;
+  const reportedHours = document.getElementById('tdHours').value;
+  const workerClaim = document.getElementById('tdClaim').value.trim() || null;
+  const msg = document.getElementById('tdMsg');
+  if (!shiftId) { msg.innerHTML = `<div class="err">Pick a shift.</div>`; return; }
+  if (!reportedHours) { msg.innerHTML = `<div class="err">Enter the hours you worked.</div>`; return; }
+  try {
+    await api(`/temp/shifts/${shiftId}/time-dispute`, { method: 'POST', body: { category, reportedHours: Number(reportedHours), workerClaim } });
+    msg.innerHTML = `<div class="ok">Sent to your agency for review.</div>`;
+    document.getElementById('tdClaim').value = '';
+  } catch (e) { msg.innerHTML = `<div class="err">${e.message}</div>`; }
 }
 
 async function loadBreakStatus(shiftId) {
@@ -262,19 +412,23 @@ function openRunningLateModal(shiftId) {
         <h3>Running Late</h3>
         <label>About how many minutes late?</label>
         <input type="number" id="lateMinutes" min="1" placeholder="15" />
+        <label>What time will you arrive? (ETA)</label>
+        <input type="text" id="lateEta" placeholder="e.g. 8:15 AM" />
         <label>Reason (optional)</label>
         <textarea id="lateReason" rows="3" placeholder="Traffic, transit delay, etc."></textarea>
-        <button class="btn btn-primary" style="margin-top:12px" onclick="submitRunningLate('${shiftId}')">Notify Manager</button>
+        <p style="margin:8px 0 0;font-size:12px;color:var(--ink-soft)">This notifies your agency AND the client supervisor right away.</p>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitRunningLate('${shiftId}')">Notify Agency + Supervisor</button>
       </div>
     </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
 }
 async function submitRunningLate(shiftId) {
   const minutesLate = document.getElementById('lateMinutes').value || null;
+  const eta = document.getElementById('lateEta').value.trim() || null;
   const reason = document.getElementById('lateReason').value.trim() || null;
-  await api(`/temp/shifts/${shiftId}/running-late`, { method: 'POST', body: { minutesLate, reason } });
+  await api(`/temp/shifts/${shiftId}/running-late`, { method: 'POST', body: { minutesLate, eta, reason } });
   document.querySelector('.modal-backdrop').remove();
-  toast('Manager notified');
+  toast('Agency and supervisor notified');
   loadShifts();
 }
 

@@ -155,6 +155,8 @@ tr:last-child td{border-bottom:none}
 
 .wm-row{cursor:pointer}
 .wm-row.active{background:var(--blue-light)}
+.pill-onbreak{background:#f0f9ff;color:#0284c7}
+.pill-attention{background:#fef2f2;color:var(--red)}
 .pill-pending{background:#fff7ed;color:#b45309}
 .pill-active{background:#f0fdf4;color:var(--green)}
 .pill-inactive{background:#f1f5f9;color:var(--ink-soft)}

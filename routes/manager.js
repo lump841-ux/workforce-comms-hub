@@ -8,6 +8,7 @@ const { manualFlagNoShow, scanForNoShows } = require('../services/noshow');
 const { acknowledgeEscalation, resolveEscalation } = require('../services/escalation');
 const { generateManagerBriefing, answerQuestion } = require('../services/ai');
 const { logAudit } = require('../services/audit');
+const { buildShiftTimeline } = require('../services/timeline');
 
 const router = express.Router();
 router.use(requireRole('agency_manager', 'agency_admin'));
@@ -41,16 +42,23 @@ router.get('/overview', (req, res) => {
   const onTheWay = count('on_the_way');
   const arrivedOnSite = count('on_site');
   const runningLate = count('running_late');
+  const calledOff = count('cancelled');
   const openEscalations = get(`SELECT COUNT(*) c FROM escalations WHERE agency_id = ? AND status != 'resolved'`, [agencyId]).c;
   const openReplacements = get(`SELECT COUNT(*) c FROM replacement_requests WHERE agency_id = ? AND status IN ('searching','offered')`, [agencyId]).c;
   const activeTemps = get(`SELECT COUNT(*) c FROM users WHERE agency_id = ? AND role = 'temp' AND active = 1`, [agencyId]).c;
   const clients = get(`SELECT COUNT(*) c FROM clients WHERE agency_id = ?`, [agencyId]).c;
+  const todayShiftIds = todayShifts.map((s) => s.id);
+  const onBreak = todayShiftIds.length
+    ? get(`SELECT COUNT(DISTINCT shift_id) c FROM shift_breaks WHERE ended_at IS NULL AND shift_id IN (${todayShiftIds.map(() => '?').join(',')})`, todayShiftIds).c
+    : 0;
 
   res.json({
     todayShiftCount: todayShifts.length,
     onTheWay,
     arrivedOnSite,
     runningLate,
+    onBreak,
+    calledOff,
     noShowsToday,
     openEscalations,
     openReplacements,
@@ -75,18 +83,46 @@ router.get('/shifts/today-summary', (req, res) => {
   res.json({ shifts: rows.map((s) => ({ ...s, displayStatus: deriveDisplayStatus(s, now) })) });
 });
 
+// Annotates shifts with onBreak / needsAttention flags that deriveDisplayStatus
+// can't compute on its own (they depend on other tables) — kept as separate
+// booleans alongside the existing displayStatus values so nothing that
+// already filters on 'on_the_way' / 'running_late' / etc. breaks.
+function annotateOpsFlags(shifts, agencyId) {
+  if (shifts.length === 0) return shifts;
+  const shiftIds = shifts.map((s) => s.id);
+  const placeholders = shiftIds.map(() => '?').join(',');
+  const onBreakIds = new Set(
+    all(`SELECT DISTINCT shift_id FROM shift_breaks WHERE shift_id IN (${placeholders}) AND ended_at IS NULL`, shiftIds).map((r) => r.shift_id)
+  );
+  const attentionIds = new Set(
+    all(`SELECT DISTINCT shift_id FROM escalations WHERE agency_id = ? AND status != 'resolved' AND shift_id IN (${placeholders})`, [agencyId, ...shiftIds]).map((r) => r.shift_id)
+  );
+  return shifts.map((s) => ({ ...s, onBreak: onBreakIds.has(s.id), needsAttention: attentionIds.has(s.id) }));
+}
+
 // ===== Shifts =====
 router.get('/shifts', (req, res) => {
   const agencyId = req.session.user.agency_id;
-  const { date, status } = req.query;
+  const { date, status, clientId, tempId } = req.query;
   let sql = `SELECT s.*, c.company_name, c.site_name, u.full_name as temp_name FROM shifts s
              JOIN clients c ON c.id = s.client_id LEFT JOIN users u ON u.id = s.temp_id
              WHERE s.agency_id = ?`;
   const params = [agencyId];
   if (date) { sql += ` AND s.shift_date = ?`; params.push(date); }
   if (status) { sql += ` AND s.status = ?`; params.push(status); }
+  if (clientId) { sql += ` AND s.client_id = ?`; params.push(clientId); }
+  if (tempId) { sql += ` AND s.temp_id = ?`; params.push(tempId); }
   sql += ` ORDER BY s.shift_date DESC, s.start_time ASC LIMIT 200`;
-  res.json({ shifts: all(sql, params) });
+  const now = new Date();
+  const shifts = annotateOpsFlags(all(sql, params), agencyId).map((s) => ({ ...s, displayStatus: deriveDisplayStatus(s, now) }));
+  res.json({ shifts });
+});
+
+router.get('/shifts/:id/timeline', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const shift = get('SELECT id FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  res.json(buildShiftTimeline(req.params.id));
 });
 
 router.post('/shifts', (req, res) => {

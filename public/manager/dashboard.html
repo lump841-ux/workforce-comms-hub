@@ -80,7 +80,23 @@
           <button class="btn btn-primary btn-sm" onclick="openNewShiftModal()">+ New Shift</button>
         </div>
       </div>
-      <div class="card"><div id="shiftsTable"></div></div>
+      <div class="card">
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <input type="date" id="shiftFilterDate" onchange="loadShifts()" style="width:auto" />
+          <select id="shiftFilterStatus" onchange="loadShifts()" style="width:auto">
+            <option value="">All Statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="no_show">No Show</option>
+            <option value="cancelled">Called Off</option>
+          </select>
+          <select id="shiftFilterClient" onchange="loadShifts()" style="width:auto"><option value="">All Clients</option></select>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('shiftFilterDate').value='';document.getElementById('shiftFilterStatus').value='';document.getElementById('shiftFilterClient').value='';loadShifts()">Clear filters</button>
+        </div>
+        <div id="shiftsTable"></div>
+      </div>
     </div>
 
     <div id="tab-replacements" style="display:none">
@@ -288,7 +304,9 @@ async function loadOverview() {
     <div class="stat-card"><div class="label">On Their Way</div><div class="value" style="color:#2563eb">${o.onTheWay}</div></div>
     <div class="stat-card good"><div class="label">Arrived On Site</div><div class="value">${o.arrivedOnSite}</div></div>
     <div class="stat-card warn"><div class="label">Running Late</div><div class="value">${o.runningLate}</div></div>
-    <div class="stat-card ${o.noShowsToday ? 'bad' : ''}"><div class="label">No-Shows</div><div class="value">${o.noShowsToday}</div></div>`;
+    <div class="stat-card ${o.noShowsToday ? 'bad' : ''}"><div class="label">No-Shows</div><div class="value">${o.noShowsToday}</div></div>
+    <div class="stat-card"><div class="label">On Break</div><div class="value">${o.onBreak || 0}</div></div>
+    <div class="stat-card ${o.calledOff ? 'warn' : ''}"><div class="label">Called Off</div><div class="value">${o.calledOff || 0}</div></div>`;
   const escBadge = document.getElementById('escBadge');
   escBadge.style.display = o.openEscalations ? '' : 'none';
   escBadge.textContent = o.openEscalations;
@@ -323,17 +341,57 @@ async function askAI() {
   document.getElementById('aiAnswer').textContent = answer;
 }
 
+function populateShiftClientFilter() {
+  const sel = document.getElementById('shiftFilterClient');
+  if (!sel || sel.dataset.count === String(CLIENTS_CACHE.length)) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All Clients</option>' + CLIENTS_CACHE.map((c) => `<option value="${c.id}">${c.company_name}</option>`).join('');
+  sel.value = current;
+  sel.dataset.count = String(CLIENTS_CACHE.length);
+}
+
 async function loadShifts() {
-  const { shifts } = await api('/manager/shifts');
+  populateShiftClientFilter();
+  const date = document.getElementById('shiftFilterDate') ? document.getElementById('shiftFilterDate').value : '';
+  const status = document.getElementById('shiftFilterStatus') ? document.getElementById('shiftFilterStatus').value : '';
+  const clientId = document.getElementById('shiftFilterClient') ? document.getElementById('shiftFilterClient').value : '';
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  if (status) params.set('status', status);
+  if (clientId) params.set('clientId', clientId);
+  const { shifts } = await api('/manager/shifts?' + params.toString());
   SHIFTS_CACHE = shifts;
   document.getElementById('shiftsTable').innerHTML = shifts.length ? `
     <table><thead><tr><th>Client</th><th>Job</th><th>Temp</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
     <tbody>${shifts.map((s) => `
-      <tr>
+      <tr ${s.needsAttention ? 'style="background:#fff4e5"' : ''}>
         <td>${s.company_name}</td><td>${s.job_title}</td><td>${s.temp_name || '<span style="color:var(--ink-soft)">Unassigned</span>'}</td>
-        <td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td><td>${pill(s.status)}</td>
-        <td>${['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}</td>
+        <td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td>
+        <td>${pill(s.status)} ${s.onBreak ? '<span class="pill pill-onbreak">On Break</span>' : ''} ${s.needsAttention ? '<span class="pill pill-attention">Needs Attention</span>' : ''}</td>
+        <td>
+          ${['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}
+          <button class="btn btn-outline btn-sm" onclick="openManagerShiftTimeline('${s.id}')">Timeline</button>
+        </td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts yet. Create your first shift.</div>`;
+}
+
+async function openManagerShiftTimeline(shiftId) {
+  const { events } = await api(`/manager/shifts/${shiftId}/timeline`);
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:480px">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Shift Timeline</h3>
+        <div style="max-height:420px;overflow-y:auto">
+          ${events.length ? events.map((e) => `
+            <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+              <div style="font-size:13px">${e.label}</div>
+              <div style="font-size:11px;color:var(--ink-soft)">${fmtDateTime(e.at)}</div>
+            </div>`).join('') : '<div class="empty">No events yet.</div>'}
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 async function flagNoShow(id) {
@@ -356,9 +414,11 @@ async function loadEscalations() {
   document.getElementById('escalationsTable').innerHTML = escalations.length ? `
     <table><thead><tr><th>Tier</th><th>Client</th><th>Trigger</th><th>Summary</th><th>Status</th><th></th></tr></thead>
     <tbody>${escalations.map((e) => `
-      <tr>
+      <tr ${e.triggered_by === 'emergency' ? 'style="background:#fef2f2"' : ''}>
         <td><span class="pill pill-tier${e.tier}">Tier ${e.tier}</span></td>
-        <td>${e.company_name || '—'}</td><td>${e.triggered_by.replace(/_/g, ' ')}</td><td>${e.summary || ''}</td><td>${pill(e.status)}</td>
+        <td>${e.company_name || '—'}</td>
+        <td>${e.triggered_by === 'emergency' ? '🚨 ' : ''}${e.triggered_by.replace(/_/g, ' ')} ${e.after_hours ? '<span class="pill pill-attention">After Hours</span>' : ''}</td>
+        <td>${e.summary || ''}</td><td>${pill(e.status)}</td>
         <td>
           ${e.status === 'open' ? `<button class="btn btn-outline btn-sm" onclick="ackEsc('${e.id}')">Acknowledge</button>` : ''}
           ${e.status !== 'resolved' ? `<button class="btn btn-primary btn-sm" onclick="resolveEsc('${e.id}')">Resolve</button>` : ''}

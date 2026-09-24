@@ -6,6 +6,8 @@ const { requireRole } = require('../middleware/auth');
 const { createEscalation } = require('../services/escalation');
 const { logAudit } = require('../services/audit');
 const { startReplacementSearch } = require('../services/replacement');
+const { notifyMany } = require('../services/notify');
+const { buildShiftTimeline } = require('../services/timeline');
 
 const router = express.Router();
 router.use(requireRole('client_hr'));
@@ -149,6 +151,143 @@ router.get('/workers', (req, res) => {
     [u.client_id, u.client_id]
   );
   res.json({ workers: rows });
+});
+
+// ===== Today's Workers (supervisor's main screen) =====
+// "Who is supposed to be here? Who is here? Who is late? Who called off?"
+// — answered in one query, scoped to this client/location only.
+router.get('/today', (req, res) => {
+  const u = req.session.user;
+  if (!u.client_id) return res.json({ workers: [] });
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = all(
+    `SELECT s.*, w.full_name as temp_name, w.avatar_url as temp_avatar, w.phone as temp_phone
+     FROM shifts s LEFT JOIN users w ON w.id = s.temp_id
+     WHERE s.client_id = ? AND s.shift_date = ?
+     ORDER BY s.start_time ASC`,
+    [u.client_id, today]
+  );
+  res.json({ workers: rows });
+});
+
+// Supervisor confirms the worker physically arrived — separate from the
+// worker's own "Arrived" tap so a no-show can't just self-report arrival.
+router.post('/shifts/:id/confirm-arrival', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  run(`UPDATE shifts SET supervisor_confirmed_arrival_at = datetime('now'), supervisor_confirmed_arrival_by = ? WHERE id = ?`, [u.id, req.params.id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  notifyMany(managers.map((m) => m.id), {
+    type: 'shift_reminder',
+    title: `Arrival confirmed by supervisor`,
+    body: `${shift.job_title} on ${shift.shift_date}`,
+    link: `/manager/dashboard.html#shifts`
+  });
+  logAudit({ agencyId: shift.agency_id, actorId: u.id, action: 'supervisor_confirmed_arrival', entityType: 'shift', entityId: req.params.id });
+  res.json({ ok: true });
+});
+
+router.post('/shifts/:id/report-absent', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  const { note } = req.body;
+  run(`UPDATE shifts SET reported_absent_at = datetime('now'), reported_absent_by = ? WHERE id = ?`, [u.id, req.params.id]);
+  createEscalation({
+    agencyId: shift.agency_id,
+    clientId: u.client_id,
+    shiftId: shift.id,
+    triggeredBy: 'client_complaint',
+    tier: 2,
+    summary: `Supervisor reports ${shift.job_title} worker absent on ${shift.shift_date}${note ? `: ${note}` : ''}`
+  });
+  logAudit({ agencyId: shift.agency_id, actorId: u.id, action: 'supervisor_reported_absent', entityType: 'shift', entityId: req.params.id, meta: { note } });
+  res.json({ ok: true });
+});
+
+router.post('/shifts/:id/report-left-early', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  const { note } = req.body;
+  run(`UPDATE shifts SET left_early_at = datetime('now'), left_early_by = ? WHERE id = ?`, [u.id, req.params.id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  notifyMany(managers.map((m) => m.id), {
+    type: 'shift_reminder',
+    title: `Worker left early`,
+    body: `${shift.job_title} on ${shift.shift_date}${note ? `: ${note}` : ''}`,
+    link: `/manager/dashboard.html#shifts`
+  });
+  logAudit({ agencyId: shift.agency_id, actorId: u.id, action: 'supervisor_reported_left_early', entityType: 'shift', entityId: req.params.id, meta: { note } });
+  res.json({ ok: true });
+});
+
+// Supervisor opens (or verifies) a time correction request — routes into
+// the same structured time_disputes workflow the worker uses.
+router.post('/shifts/:id/time-correction', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  const { clientClaimHours, clientClaim, category } = req.body;
+  if (clientClaimHours == null) return res.status(400).json({ error: 'clientClaimHours is required' });
+
+  const disputeId = id('dsp');
+  run(
+    `INSERT INTO time_disputes (id, agency_id, shift_id, category, reported_by, reported_hours, client_claim_hours, client_claim)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [disputeId, shift.agency_id, req.params.id, category || 'other', u.id, clientClaimHours, clientClaimHours, clientClaim || null]
+  );
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  notifyMany(managers.map((m) => m.id), {
+    type: 'message',
+    title: `Time correction requested by supervisor`,
+    body: `${shift.job_title} on ${shift.shift_date}${clientClaim ? `: ${clientClaim.slice(0, 100)}` : ''}`,
+    link: `/manager/dashboard.html#issues`
+  });
+  logAudit({ agencyId: shift.agency_id, actorId: u.id, action: 'supervisor_time_correction_requested', entityType: 'time_dispute', entityId: disputeId });
+  res.json({ ok: true, disputeId });
+});
+
+// Supervisor verifies an existing time dispute (adds their confirmation
+// before the agency resolves it) — the "supervisor can be asked to verify"
+// step from the time-dispute workflow.
+router.post('/time-disputes/:id/verify', (req, res) => {
+  const u = req.session.user;
+  const dispute = get(
+    `SELECT td.* FROM time_disputes td JOIN shifts s ON s.id = td.shift_id WHERE td.id = ? AND s.client_id = ?`,
+    [req.params.id, u.client_id]
+  );
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found for your organization' });
+  run(`UPDATE time_disputes SET status = 'supervisor_verified', supervisor_verified_at = datetime('now'), supervisor_verified_by = ? WHERE id = ?`, [u.id, dispute.id]);
+  logAudit({ agencyId: dispute.agency_id, actorId: u.id, action: 'supervisor_verified_time_dispute', entityType: 'time_dispute', entityId: dispute.id });
+  res.json({ ok: true });
+});
+
+// Supervisor attaches a photo to a shift's record (e.g. "arrived but
+// facility was locked") — part of the same shift_photos gallery the
+// worker's proof photos live in, tagged by uploader role.
+router.post('/shifts/:id/photos', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  const { dataUrl, caption } = req.body;
+  if (!dataUrl) return res.status(400).json({ error: 'A photo is required' });
+  const photoId = id('pho');
+  run(
+    `INSERT INTO shift_photos (id, shift_id, temp_id, uploaded_by, uploader_role, data_url, caption)
+     VALUES (?,?,?,?, 'client_hr', ?,?)`,
+    [photoId, req.params.id, shift.temp_id, u.id, dataUrl, caption || null]
+  );
+  logAudit({ agencyId: shift.agency_id, actorId: u.id, action: 'supervisor_photo_uploaded', entityType: 'shift_photo', entityId: photoId });
+  res.json({ ok: true, photoId });
+});
+
+router.get('/shifts/:id/timeline', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT id FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  res.json(buildShiftTimeline(req.params.id));
 });
 
 // ===== Time & Attendance =====

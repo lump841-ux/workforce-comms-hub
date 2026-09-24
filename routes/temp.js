@@ -6,6 +6,8 @@ const { acceptReplacement, startReplacementSearch } = require('../services/repla
 const { createEscalation } = require('../services/escalation');
 const { notifyMany } = require('../services/notify');
 const { logAudit } = require('../services/audit');
+const { getSupervisorsForClient } = require('../services/supervisors');
+const { buildShiftTimeline } = require('../services/timeline');
 
 const router = express.Router();
 router.use(requireRole('temp'));
@@ -13,18 +15,30 @@ router.use(requireRole('temp'));
 router.get('/shifts', (req, res) => {
   const u = req.session.user;
   const upcoming = all(
-    `SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id
+    `SELECT s.*, c.company_name, c.site_name, c.address FROM shifts s JOIN clients c ON c.id = s.client_id
      WHERE s.temp_id = ? AND s.status IN ('scheduled','confirmed','in_progress')
      ORDER BY s.shift_date ASC, s.start_time ASC`,
     [u.id]
   );
   const history = all(
-    `SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id
+    `SELECT s.*, c.company_name, c.site_name, c.address FROM shifts s JOIN clients c ON c.id = s.client_id
      WHERE s.temp_id = ? AND s.status IN ('completed','no_show','replaced','cancelled')
      ORDER BY s.shift_date DESC LIMIT 20`,
     [u.id]
   );
   res.json({ upcoming, history });
+});
+
+// Who to reach for this shift — the agency's own managers, plus whichever
+// client_hr supervisors are assigned to the client site. Powers "View
+// Assigned Supervisor" and the Message Supervisor picker.
+router.get('/shifts/:id/care-team', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  const agencyContacts = all(`SELECT id, full_name, email, phone, role FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const supervisors = getSupervisorsForClient(shift.client_id).map((s) => ({ ...s, role: 'client_hr' }));
+  res.json({ agencyContacts, supervisors });
 });
 
 router.post('/shifts/:id/confirm', (req, res) => {
@@ -108,17 +122,115 @@ router.post('/shifts/:id/running-late', (req, res) => {
   const u = req.session.user;
   const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
-  const { minutesLate, reason } = req.body;
-  run(`UPDATE shifts SET running_late_at = datetime('now') WHERE id = ?`, [req.params.id]);
+  const { minutesLate, reason, eta } = req.body;
+  run(`UPDATE shifts SET running_late_at = datetime('now'), late_eta = ? WHERE id = ?`, [eta || null, req.params.id]);
+
+  // Running late reaches BOTH the agency and the assigned client supervisor —
+  // the supervisor is the one standing at the site wondering where the
+  // worker is, so they get this the same moment the agency does.
   const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
-  notifyMany(managers.map((m) => m.id), {
+  const supervisors = getSupervisorsForClient(shift.client_id);
+  const body = `${shift.job_title} at ${shift.company_name}${minutesLate ? ` — about ${minutesLate} min late` : ''}${eta ? `, ETA ${eta}` : ''}${reason ? `: ${reason}` : ''}`;
+  notifyMany([...managers.map((m) => m.id), ...supervisors.map((s) => s.id)], {
     type: 'shift_reminder',
     title: `${u.full_name} is running late`,
-    body: `${shift.job_title} at ${shift.company_name}${minutesLate ? ` — about ${minutesLate} min late` : ''}${reason ? `: ${reason}` : ''}`,
+    body,
     link: `/manager/dashboard.html#shifts`
   });
-  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_running_late', entityType: 'shift', entityId: req.params.id, meta: { minutesLate, reason } });
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_running_late', entityType: 'shift', entityId: req.params.id, meta: { minutesLate, reason, eta } });
   res.json({ ok: true });
+});
+
+// ============ ARRIVED (distinct from clock-in — "I'm here" vs "I'm working") ============
+router.post('/shifts/:id/arrived', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  run(`UPDATE shifts SET arrived_at = datetime('now') WHERE id = ?`, [req.params.id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const supervisors = getSupervisorsForClient(shift.client_id);
+  notifyMany([...managers.map((m) => m.id), ...supervisors.map((s) => s.id)], {
+    type: 'shift_reminder',
+    title: `${u.full_name} has arrived`,
+    body: `${shift.job_title} at ${shift.company_name}`,
+    link: `/manager/dashboard.html#shifts`
+  });
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_arrived', entityType: 'shift', entityId: req.params.id });
+  res.json({ ok: true });
+});
+
+// ============ EMERGENCY / NEED HELP ============
+// The one action guaranteed to reach both the agency AND the client
+// supervisor immediately, any hour of the day — a tier-3 escalation
+// regardless of what time it is, since this is exactly the "6:30 AM,
+// office is closed" scenario the whole platform exists to solve.
+router.post('/shifts/:id/emergency', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
+  const { details } = req.body;
+
+  const convId = id('cnv');
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const supervisors = shift ? getSupervisorsForClient(shift.client_id) : [];
+  run(
+    `INSERT INTO conversations (id, agency_id, client_id, type, subject, shift_id, created_by, priority)
+     VALUES (?,?,?, 'escalation', 'EMERGENCY', ?, ?, 'critical')`,
+    [convId, u.agency_id, shift ? shift.client_id : null, shift ? shift.id : null, u.id]
+  );
+  const allParticipants = [...new Set([u.id, ...managers.map((m) => m.id), ...supervisors.map((s) => s.id)])];
+  for (const pid of allParticipants) {
+    run(`INSERT INTO conversation_participants (id, conversation_id, user_id) VALUES (?,?,?)`, [id('cvp'), convId, pid]);
+  }
+  const msgBody = details ? `EMERGENCY: ${details}` : 'EMERGENCY — needs help immediately';
+  run(`INSERT INTO messages (id, conversation_id, sender_id, body) VALUES (?,?,?,?)`, [id('msg'), convId, u.id, msgBody]);
+  notifyMany(allParticipants.filter((p) => p !== u.id), {
+    type: 'escalation',
+    title: `🚨 EMERGENCY — ${u.full_name}`,
+    body: `${details || 'Needs help immediately'}${shift ? ` (${shift.job_title} at ${shift.company_name})` : ''}`,
+    link: `/manager/dashboard.html#escalations`
+  });
+
+  createEscalation({
+    agencyId: u.agency_id,
+    clientId: shift ? shift.client_id : null,
+    shiftId: shift ? shift.id : null,
+    conversationId: convId,
+    triggeredBy: 'emergency',
+    tier: 3,
+    summary: `EMERGENCY — ${u.full_name}: ${details || 'needs help immediately'}`
+  });
+
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_emergency', entityType: 'shift', entityId: shift ? shift.id : null, meta: { details } });
+  res.json({ ok: true, conversationId: convId });
+});
+
+// ============ REPORT TIME PROBLEM (structured — worker-initiated) ============
+router.post('/shifts/:id/time-dispute', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  const { category, reportedHours, workerClaim, photoDataUrl } = req.body;
+  const validCategories = ['wrong_clock_in', 'wrong_clock_out', 'missing_hours', 'break_issue', 'other'];
+  if (!category || !validCategories.includes(category)) {
+    return res.status(400).json({ error: 'A valid category is required' });
+  }
+  if (reportedHours == null) return res.status(400).json({ error: 'reportedHours is required' });
+
+  const disputeId = id('dsp');
+  run(
+    `INSERT INTO time_disputes (id, agency_id, shift_id, category, reported_by, reported_hours, worker_claim, photo_data_url)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [disputeId, u.agency_id, req.params.id, category, u.id, reportedHours, workerClaim || null, photoDataUrl || null]
+  );
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  notifyMany(managers.map((m) => m.id), {
+    type: 'message',
+    title: `Time issue reported by ${u.full_name}`,
+    body: `${category.replace(/_/g, ' ')}${workerClaim ? `: ${workerClaim.slice(0, 100)}` : ''}`,
+    link: `/manager/dashboard.html#issues`
+  });
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_time_dispute_opened', entityType: 'time_dispute', entityId: disputeId, meta: { category } });
+  res.json({ ok: true, disputeId });
 });
 
 // ============ CAN'T MAKE SHIFT (cancel + trigger replacement search) ============
@@ -245,6 +357,14 @@ router.post('/issues', (req, res) => {
 
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_reported_issue', entityType: 'conversation', entityId: convId, meta: { category } });
   res.json({ ok: true, conversationId: convId });
+});
+
+// ============ SHIFT TIMELINE ============
+router.get('/shifts/:id/timeline', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT id FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  res.json(buildShiftTimeline(req.params.id));
 });
 
 // ============ PROFILE ============

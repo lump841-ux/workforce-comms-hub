@@ -40,6 +40,10 @@
     <div id="tab-overview">
       <div class="page-head"><div><div class="page-title">Your Staffing Overview</div><div class="page-sub">Live status of temps from your agency</div></div></div>
       <div class="stat-grid" id="overviewStats"></div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><h3>Today's Workers</h3></div>
+        <div id="todayWorkersList"><div class="empty">Loading…</div></div>
+      </div>
     </div>
 
     <div id="tab-workers" style="display:none">
@@ -162,8 +166,8 @@ async function boot() {
   document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
   document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => { switchTab(el.dataset.tab); toggleMobileNav(false); }));
   await loadAgencies();
-  await Promise.all([loadOverview(), loadShifts(), loadConversations()]);
-  setInterval(() => { loadOverview(); loadConversations(); }, 20000);
+  await Promise.all([loadOverview(), loadTodayWorkers(), loadShifts(), loadConversations()]);
+  setInterval(() => { loadOverview(); loadTodayWorkers(); loadConversations(); }, 20000);
 }
 
 async function requireClientSession() {
@@ -266,6 +270,113 @@ async function loadOverview() {
     <div class="stat-card good"><div class="label">Temps On-Site</div><div class="value">${o.tempsOnSiteToday}</div></div>
     <div class="stat-card ${o.noShowsToday ? 'bad' : ''}"><div class="label">No-Shows Today</div><div class="value">${o.noShowsToday}</div></div>
     <div class="stat-card ${o.openEscalations ? 'warn' : ''}"><div class="label">Open Issues</div><div class="value">${o.openEscalations}</div></div>`;
+}
+
+// ===== Today's Workers (the "who's here / who's late / who called off" screen) =====
+function tempDisplayStatus(s) {
+  if (s.status === 'cancelled') return { label: 'Called Off', cls: 'bad' };
+  if (s.status === 'no_show') return { label: 'No Show', cls: 'bad' };
+  if (s.reported_absent_at) return { label: 'Reported Absent', cls: 'bad' };
+  if (s.left_early_at) return { label: 'Left Early', cls: 'warn' };
+  if (s.status === 'completed') return { label: 'Clocked Out', cls: 'good' };
+  if (s.status === 'in_progress') return { label: 'Working', cls: 'good' };
+  if (s.arrived_at) return { label: 'Arrived', cls: 'good' };
+  if (s.running_late_at) return { label: `Late${s.late_eta ? ' — ETA ' + s.late_eta : ''}`, cls: 'warn' };
+  if (s.en_route_at) return { label: 'On the Way', cls: '' };
+  return { label: 'Scheduled', cls: '' };
+}
+
+async function loadTodayWorkers() {
+  const { workers } = await api('/client/today');
+  const el = document.getElementById('todayWorkersList');
+  if (!el) return;
+  if (!workers.length) { el.innerHTML = `<div class="empty">No workers scheduled today.</div>`; return; }
+  el.innerHTML = workers.map((s) => {
+    const st = tempDisplayStatus(s);
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <div>
+        <strong>${s.temp_name || 'Unassigned'}</strong> <span class="pill ${st.cls ? 'pill-' + st.cls : ''}">${st.label}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${s.job_title} · ${s.start_time}–${s.end_time}${s.temp_phone ? ' · ' + s.temp_phone : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="confirmWorkerArrival('${s.id}')" ${s.supervisor_confirmed_arrival_at ? 'disabled' : ''}>${s.supervisor_confirmed_arrival_at ? 'Arrival Confirmed ✓' : 'Confirm Arrived'}</button>
+        <button class="btn btn-outline btn-sm" onclick="reportWorkerAbsent('${s.id}')">Report Absent</button>
+        <button class="btn btn-outline btn-sm" onclick="reportWorkerLeftEarly('${s.id}')">Left Early</button>
+        <button class="btn btn-outline btn-sm" onclick="openTimeCorrectionModal('${s.id}')">Fix Time</button>
+        <button class="btn btn-outline btn-sm" onclick="openWorkerTimeline('${s.id}')">Timeline</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function confirmWorkerArrival(shiftId) {
+  try { await api(`/client/shifts/${shiftId}/confirm-arrival`, { method: 'POST' }); toast('Arrival confirmed'); loadTodayWorkers(); }
+  catch (e) { toast(e.message, true); }
+}
+async function reportWorkerAbsent(shiftId) {
+  const note = prompt('Any details? (optional)') || null;
+  try { await api(`/client/shifts/${shiftId}/report-absent`, { method: 'POST', body: { note } }); toast('Agency notified'); loadTodayWorkers(); }
+  catch (e) { toast(e.message, true); }
+}
+async function reportWorkerLeftEarly(shiftId) {
+  const note = prompt('Any details? (optional)') || null;
+  try { await api(`/client/shifts/${shiftId}/report-left-early`, { method: 'POST', body: { note } }); toast('Agency notified'); loadTodayWorkers(); }
+  catch (e) { toast(e.message, true); }
+}
+
+function openTimeCorrectionModal(shiftId) {
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Request Time Correction</h3>
+        <label>What's wrong?</label>
+        <select id="tc_category">
+          <option value="wrong_clock_in">Wrong clock-in time</option>
+          <option value="wrong_clock_out">Wrong clock-out time</option>
+          <option value="missing_hours">Missing hours</option>
+          <option value="break_issue">Break issue</option>
+          <option value="other">Other</option>
+        </select>
+        <label>Hours it should be</label>
+        <input type="number" step="0.25" id="tc_hours" placeholder="8" />
+        <label>Details (optional)</label>
+        <textarea id="tc_note" rows="3"></textarea>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="submitTimeCorrection('${shiftId}')">Send to Agency</button>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+async function submitTimeCorrection(shiftId) {
+  const category = document.getElementById('tc_category').value;
+  const clientClaimHours = document.getElementById('tc_hours').value;
+  const clientClaim = document.getElementById('tc_note').value.trim() || null;
+  if (!clientClaimHours) { toast('Enter the correct hours', true); return; }
+  try {
+    await api(`/client/shifts/${shiftId}/time-correction`, { method: 'POST', body: { category, clientClaimHours: Number(clientClaimHours), clientClaim } });
+    document.querySelector('.modal-backdrop').remove();
+    toast('Sent to agency for review');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function openWorkerTimeline(shiftId) {
+  const { events } = await api(`/client/shifts/${shiftId}/timeline`);
+  const html = `
+    <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:480px">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <h3>Shift Timeline</h3>
+        <div style="max-height:420px;overflow-y:auto">
+          ${events.length ? events.map((e) => `
+            <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+              <div style="font-size:13px">${e.label}</div>
+              <div style="font-size:11px;color:var(--ink-soft)">${fmtDateTime(e.at)}</div>
+            </div>`).join('') : '<div class="empty">No events yet.</div>'}
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 // ===== Workers =====

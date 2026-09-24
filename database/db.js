@@ -31,6 +31,22 @@ function migrate() {
     addColumnIfMissing('shifts', 'cancel_reason_category', 'TEXT');
     addColumnIfMissing('shifts', 'cancel_reason', 'TEXT');
     addColumnIfMissing('users', 'language_pref', "TEXT NOT NULL DEFAULT 'en'");
+    addColumnIfMissing('shifts', 'late_eta', 'TEXT');
+    addColumnIfMissing('shifts', 'arrived_at', 'TEXT');
+    addColumnIfMissing('shifts', 'supervisor_confirmed_arrival_at', 'TEXT');
+    addColumnIfMissing('shifts', 'supervisor_confirmed_arrival_by', 'TEXT');
+    addColumnIfMissing('shifts', 'reported_absent_at', 'TEXT');
+    addColumnIfMissing('shifts', 'reported_absent_by', 'TEXT');
+    addColumnIfMissing('shifts', 'left_early_at', 'TEXT');
+    addColumnIfMissing('shifts', 'left_early_by', 'TEXT');
+    addColumnIfMissing('time_disputes', 'category', "TEXT NOT NULL DEFAULT 'other'");
+    addColumnIfMissing('time_disputes', 'reported_by', 'TEXT');
+    addColumnIfMissing('time_disputes', 'supervisor_verified_at', 'TEXT');
+    addColumnIfMissing('time_disputes', 'supervisor_verified_by', 'TEXT');
+    addColumnIfMissing('time_disputes', 'photo_data_url', 'TEXT');
+    addColumnIfMissing('shift_photos', 'uploaded_by', 'TEXT');
+    addColumnIfMissing('shift_photos', 'uploader_role', "TEXT NOT NULL DEFAULT 'temp'");
+    addColumnIfMissing('escalations', 'after_hours', 'INTEGER NOT NULL DEFAULT 0');
   } catch (e) {
     console.error('Migration warning:', e.message);
   }

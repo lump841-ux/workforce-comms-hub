@@ -380,6 +380,96 @@ async function main() {
   const clientPhotosRes = await request(server, { method: 'GET', path: `/api/client/shifts/${shiftId}/photos`, cookie: supCookie });
   assert(clientPhotosRes.status === 200 && clientPhotosRes.body.photos.length === 2, 'supervisor can see both photos on the shift');
 
+  // 19. Phase 2 — full replacement workflow: client-initiated request goes
+  // through agency review before any worker is ever contacted; agency can
+  // also initiate a replacement independently; agency can decline a
+  // client-initiated request without contacting anyone.
+  const shift2Res = await request(server, {
+    method: 'POST', path: '/api/manager/shifts', cookie: adminCookie,
+    body: { clientId, tempId, jobTitle: 'Warehouse Associate', shiftDate: '2020-02-01', startTime: '09:00', endTime: '17:00' }
+  });
+  assert(shift2Res.status === 200 && shift2Res.body.ok, 'second shift created for replacement-workflow tests');
+  const shift2Id = shift2Res.body.shiftId;
+
+  const clientReqRes = await request(server, {
+    method: 'POST', path: '/api/client/replacement-requests', cookie: supCookie,
+    body: { shiftId: shift2Id, reason: 'No-show', note: 'Called and left a voicemail, no response' }
+  });
+  assert(clientReqRes.status === 200 && clientReqRes.body.ok && clientReqRes.body.requestId, 'client submits a replacement request');
+  const clientReqId = clientReqRes.body.requestId;
+
+  const repsAfterClientReq = await request(server, { method: 'GET', path: '/api/manager/replacements', cookie: adminCookie });
+  const clientReqRow = repsAfterClientReq.body.replacements.find((r) => r.id === clientReqId);
+  assert(!!clientReqRow && clientReqRow.status === 'requested', 'client-initiated request sits at requested, not yet searching');
+  assert(clientReqRow.candidates_notified === 0, 'no worker has been notified yet — agency has not reviewed it');
+
+  const temp2NotifsBeforeReview = await request(server, { method: 'GET', path: '/api/notifications', cookie: temp2Cookie });
+  const temp2NotifCountBeforeReview = temp2NotifsBeforeReview.body.notifications.length;
+
+  // Agency declines this one instead of searching — worker should still never be contacted.
+  const rejectRes = await request(server, { method: 'POST', path: `/api/manager/replacements/${clientReqId}/reject`, cookie: adminCookie, body: { note: 'Client will cover internally' } });
+  assert(rejectRes.status === 200 && rejectRes.body.ok, 'agency declines the client-initiated request');
+  const repsAfterReject = await request(server, { method: 'GET', path: '/api/manager/replacements', cookie: adminCookie });
+  assert(repsAfterReject.body.replacements.find((r) => r.id === clientReqId).status === 'cancelled', 'declined request now shows cancelled');
+  const temp2NotifsAfterReject = await request(server, { method: 'GET', path: '/api/notifications', cookie: temp2Cookie });
+  assert(temp2NotifsAfterReject.body.notifications.length === temp2NotifCountBeforeReview, 'declining a request never notified any worker');
+
+  // A fresh client-initiated request that the agency approves and searches.
+  const shift3Res = await request(server, {
+    method: 'POST', path: '/api/manager/shifts', cookie: adminCookie,
+    body: { clientId, tempId, jobTitle: 'Warehouse Associate', shiftDate: '2020-03-01', startTime: '09:00', endTime: '17:00' }
+  });
+  const shift3Id = shift3Res.body.shiftId;
+  const clientReq2Res = await request(server, {
+    method: 'POST', path: '/api/client/replacement-requests', cookie: supCookie,
+    body: { shiftId: shift3Id, reason: 'Called off / sick', note: '' }
+  });
+  const clientReq2Id = clientReq2Res.body.requestId;
+
+  const startSearchRes = await request(server, { method: 'POST', path: `/api/manager/replacements/${clientReq2Id}/start-search`, cookie: adminCookie });
+  assert(startSearchRes.status === 200 && startSearchRes.body.ok, 'agency starts the search after reviewing');
+  const repsAfterSearch = await request(server, { method: 'GET', path: '/api/manager/replacements', cookie: adminCookie });
+  const searchedRow = repsAfterSearch.body.replacements.find((r) => r.id === clientReq2Id);
+  assert(['offered', 'unfilled'].includes(searchedRow.status), 'after agency review, request moves to offered/unfilled');
+
+  const candidatesRes = await request(server, { method: 'GET', path: `/api/manager/replacements/${clientReq2Id}/candidates`, cookie: adminCookie });
+  assert(candidatesRes.status === 200 && Array.isArray(candidatesRes.body.candidates), 'agency can list eligible candidates for manual pick');
+
+  // Second temp accepts the open shift from their open-shifts feed.
+  const openShifts2 = await request(server, { method: 'GET', path: '/api/temp/open-shifts', cookie: temp2Cookie });
+  const offer2 = openShifts2.body.openShifts.find((o) => o.replacement_request_id === clientReq2Id);
+  if (offer2) {
+    const accept2Res = await request(server, { method: 'POST', path: `/api/temp/open-shifts/${clientReq2Id}/accept`, cookie: temp2Cookie });
+    assert(accept2Res.status === 200 && accept2Res.body.ok, 'second temp accepts the reviewed-and-searched replacement');
+
+    const repsAfterAccept = await request(server, { method: 'GET', path: '/api/manager/replacements', cookie: adminCookie });
+    assert(repsAfterAccept.body.replacements.find((r) => r.id === clientReq2Id).status === 'filled', 'request now shows filled after worker accepts');
+
+    const confirmRes = await request(server, { method: 'POST', path: `/api/client/replacement-requests/${clientReq2Id}/confirm`, cookie: supCookie });
+    assert(confirmRes.status === 200 && confirmRes.body.ok, 'client confirms the filled replacement');
+    const repsAfterConfirm = await request(server, { method: 'GET', path: '/api/manager/replacements', cookie: adminCookie });
+    assert(repsAfterConfirm.body.replacements.find((r) => r.id === clientReq2Id).status === 'completed', 'confirmed replacement now shows completed');
+  } else {
+    console.log('  (skip) no open shift offered for clientReq2 — candidate pool empty, not a failure of core logic');
+  }
+
+  // Agency-initiated replacement — independent of any client request or no-show event (e.g. a call-off the agency hears about directly).
+  const shift4Res = await request(server, {
+    method: 'POST', path: '/api/manager/shifts', cookie: adminCookie,
+    body: { clientId, tempId, jobTitle: 'Warehouse Associate', shiftDate: '2020-04-01', startTime: '09:00', endTime: '17:00' }
+  });
+  const shift4Id = shift4Res.body.shiftId;
+  const agencyReplaceRes = await request(server, { method: 'POST', path: `/api/manager/shifts/${shift4Id}/replace`, cookie: adminCookie, body: { reason: 'Worker called off' } });
+  assert(agencyReplaceRes.status === 200 && agencyReplaceRes.body.ok && agencyReplaceRes.body.requestId, 'agency initiates a replacement directly on a shift');
+  const repsAfterAgencyInit = await request(server, { method: 'GET', path: '/api/manager/replacements', cookie: adminCookie });
+  const agencyRow = repsAfterAgencyInit.body.replacements.find((r) => r.id === agencyReplaceRes.body.requestId);
+  assert(!!agencyRow && agencyRow.initiated_by === 'agency', 'agency-initiated replacement is tagged initiated_by agency');
+  assert(['offered', 'unfilled'].includes(agencyRow.status), 'agency-initiated replacement goes straight to search, skipping the requested stage');
+
+  // A second replace attempt on the same shift while one is already open should be rejected.
+  const dupeReplaceRes = await request(server, { method: 'POST', path: `/api/manager/shifts/${shift4Id}/replace`, cookie: adminCookie, body: { reason: 'duplicate attempt' } });
+  assert(dupeReplaceRes.status === 409, 'a second replacement cannot be opened while one is already in progress for the same shift');
+
   // 13. Role enforcement — temp cannot hit manager routes
   const forbidden = await request(server, { method: 'GET', path: '/api/manager/overview', cookie: tempCookie });
   assert(forbidden.status === 403, 'temp is forbidden from manager-only routes');

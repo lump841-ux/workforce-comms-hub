@@ -5,6 +5,7 @@ const { run, all, get } = require('../database/db');
 const { id } = require('../services/ids');
 const { requireRole } = require('../middleware/auth');
 const { manualFlagNoShow, scanForNoShows } = require('../services/noshow');
+const { startReplacementSearch, findCandidates, selectReplacementCandidate, rejectReplacementRequest } = require('../services/replacement');
 const { acknowledgeEscalation, resolveEscalation } = require('../services/escalation');
 const { generateManagerBriefing, answerQuestion } = require('../services/ai');
 const { logAudit } = require('../services/audit');
@@ -173,6 +174,28 @@ router.post('/no-shows/scan', (req, res) => {
   res.json({ ok: true, flagged });
 });
 
+// Agency-initiated replacement — independent of any client request and not
+// tied to an automatic no-show detection. Covers the call-off case: the
+// agency hears a worker can't make it and starts the search themselves
+// before anything is ever flagged as a no-show.
+router.post('/shifts/:id/replace', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  if (!['scheduled', 'confirmed', 'in_progress'].includes(shift.status)) {
+    return res.status(400).json({ error: 'This shift is not in a state that can be replaced' });
+  }
+  const openExisting = get(
+    `SELECT id FROM replacement_requests WHERE original_shift_id = ? AND status NOT IN ('filled','completed','cancelled','unfilled')`,
+    [shift.id]
+  );
+  if (openExisting) return res.status(409).json({ error: 'A replacement search is already open for this shift' });
+
+  const { reason, note } = req.body;
+  const reqId = startReplacementSearch({ shift, initiatedBy: 'agency', requestedBy: u.id, reason: reason || null, note: note || null, reviewedBy: u.id });
+  res.json({ ok: true, requestId: reqId });
+});
+
 // ===== Replacement requests =====
 router.get('/replacements', (req, res) => {
   const agencyId = req.session.user.agency_id;
@@ -185,6 +208,73 @@ router.get('/replacements', (req, res) => {
     [agencyId]
   );
   res.json({ replacements: rows });
+});
+
+// Agency reviews a client-initiated ('requested') row and kicks off the
+// actual worker search/broadcast. Also safe to call on 'unfilled' to retry.
+router.post('/replacements/:id/start-search', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const reqRow = get('SELECT * FROM replacement_requests WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  if (!reqRow) return res.status(404).json({ error: 'Replacement request not found' });
+  if (!['requested', 'unfilled'].includes(reqRow.status)) {
+    return res.status(400).json({ error: 'This request is not awaiting search' });
+  }
+  const shift = get('SELECT * FROM shifts WHERE id = ?', [reqRow.original_shift_id]);
+  if (!shift) return res.status(404).json({ error: 'Original shift not found' });
+  try {
+    startReplacementSearch({
+      shift,
+      requestId: reqRow.id,
+      noShowEventId: reqRow.no_show_event_id,
+      initiatedBy: reqRow.initiated_by,
+      requestedBy: reqRow.requested_by,
+      reviewedBy: req.session.user.id
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to start search' });
+  }
+});
+
+// List eligible candidates for a request so a manager can pick one manually
+// instead of (or in addition to) the auto-broadcast.
+router.get('/replacements/:id/candidates', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const reqRow = get('SELECT * FROM replacement_requests WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  if (!reqRow) return res.status(404).json({ error: 'Replacement request not found' });
+  const shift = get('SELECT * FROM shifts WHERE id = ?', [reqRow.original_shift_id]);
+  if (!shift) return res.status(404).json({ error: 'Original shift not found' });
+  const candidates = findCandidates(shift, 20);
+  const alreadyOffered = all('SELECT temp_id FROM replacement_candidates WHERE replacement_request_id = ?', [reqRow.id]).map((r) => r.temp_id);
+  res.json({ candidates, alreadyOffered });
+});
+
+// Manager hand-picks a specific worker to offer the shift to.
+router.post('/replacements/:id/select', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const reqRow = get('SELECT * FROM replacement_requests WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  if (!reqRow) return res.status(404).json({ error: 'Replacement request not found' });
+  const { tempId } = req.body;
+  if (!tempId) return res.status(400).json({ error: 'tempId is required' });
+  try {
+    const result = selectReplacementCandidate({ requestId: reqRow.id, tempId, actorId: req.session.user.id });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Could not select that candidate' });
+  }
+});
+
+// Agency declines a client-initiated request without ever contacting a worker.
+router.post('/replacements/:id/reject', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const reqRow = get('SELECT * FROM replacement_requests WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  if (!reqRow) return res.status(404).json({ error: 'Replacement request not found' });
+  try {
+    const result = rejectReplacementRequest({ requestId: reqRow.id, actorId: req.session.user.id, note: req.body.note });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Could not reject this request' });
+  }
 });
 
 // ===== Escalations =====

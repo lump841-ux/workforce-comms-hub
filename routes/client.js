@@ -5,7 +5,7 @@ const { id } = require('../services/ids');
 const { requireRole } = require('../middleware/auth');
 const { createEscalation } = require('../services/escalation');
 const { logAudit } = require('../services/audit');
-const { startReplacementSearch } = require('../services/replacement');
+const { requestReplacement, confirmReplacementByClient } = require('../services/replacement');
 const { notifyMany } = require('../services/notify');
 const { buildShiftTimeline } = require('../services/timeline');
 
@@ -342,16 +342,19 @@ router.get('/replacement-requests', (req, res) => {
   res.json({ requests: rows });
 });
 
-router.post('/replacement-requests', async (req, res) => {
+// A client-raised replacement request no longer auto-broadcasts to workers —
+// it lands as 'requested' and waits for the agency to review it (accept,
+// hand-pick a worker, or reject), matching the spec's Requested -> Agency
+// Reviewing stage. See POST /manager/replacements/:id/start-search etc.
+router.post('/replacement-requests', (req, res) => {
   const u = req.session.user;
-  const { shiftId, reason } = req.body;
+  const { shiftId, reason, note } = req.body;
   if (!shiftId) return res.status(400).json({ error: 'shiftId is required' });
   const shift = get(`SELECT * FROM shifts WHERE id = ? AND client_id = ?`, [shiftId, u.client_id]);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
 
   try {
-    const result = await startReplacementSearch({ shift, noShowEventId: null });
-    logAudit({ agencyId: shift.agency_id, actorId: u.id, action: 'client_initiated_replacement', entityType: 'shift', entityId: shiftId });
+    const reqId = requestReplacement({ shift, reason, note, requestedBy: u.id });
     if (reason) {
       createEscalation({
         agencyId: shift.agency_id,
@@ -362,9 +365,21 @@ router.post('/replacement-requests', async (req, res) => {
         summary: reason
       });
     }
-    res.json({ ok: true, result });
+    res.json({ ok: true, requestId: reqId });
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Failed to start replacement search' });
+    res.status(500).json({ error: e.message || 'Failed to submit replacement request' });
+  }
+});
+
+// Client's final sign-off once a worker has accepted the replacement shift —
+// closes the loop (status moves 'filled' -> 'completed').
+router.post('/replacement-requests/:id/confirm', (req, res) => {
+  const u = req.session.user;
+  try {
+    const result = confirmReplacementByClient({ requestId: req.params.id, clientUserId: u.id, clientId: u.client_id });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Could not confirm replacement' });
   }
 });
 

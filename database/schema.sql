@@ -213,15 +213,31 @@ CREATE TABLE IF NOT EXISTS no_show_events (
 );
 
 -- ============ REPLACEMENT WORKFLOW ============
+-- Status is the coarse machine state (requested | searching | offered |
+-- filled | unfilled | cancelled | completed); the finer-grained stage the
+-- spec asks for (Requested -> Agency Reviewing -> Replacement Search ->
+-- Replacement Selected -> Worker Notified -> Worker Accepted -> Client
+-- Confirmed -> Completed) is derived from status plus these timestamps
+-- rather than as more status literals, so nothing that already
+-- pattern-matches on status breaks.
 CREATE TABLE IF NOT EXISTS replacement_requests (
   id TEXT PRIMARY KEY,
   agency_id TEXT NOT NULL REFERENCES agencies(id),
   original_shift_id TEXT NOT NULL REFERENCES shifts(id),
   no_show_event_id TEXT REFERENCES no_show_events(id),
-  status TEXT NOT NULL DEFAULT 'searching', -- searching | offered | filled | unfilled | cancelled
+  status TEXT NOT NULL DEFAULT 'searching', -- requested | searching | offered | filled | unfilled | cancelled | completed
+  initiated_by TEXT NOT NULL DEFAULT 'system', -- client | agency | system (auto no-show)
+  requested_by TEXT REFERENCES users(id),
+  reason TEXT,
+  note TEXT,
+  reviewed_at TEXT,
+  reviewed_by TEXT REFERENCES users(id),
   candidates_notified INTEGER NOT NULL DEFAULT 0,
   filled_by_temp_id TEXT REFERENCES users(id),
   filled_shift_id TEXT REFERENCES shifts(id),
+  client_confirmed_at TEXT,
+  client_confirmed_by TEXT REFERENCES users(id),
+  completed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   filled_at TEXT
 );

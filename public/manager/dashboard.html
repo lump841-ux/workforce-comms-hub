@@ -254,6 +254,7 @@ let ACTIVE_CONV = null;
 let CLIENTS_CACHE = [];
 let TEMPS_CACHE = [];
 let SHIFTS_CACHE = [];
+let REPLACEMENTS_CACHE = [];
 const JOB_TITLE_CHIPS = ['Warehouse Associate', 'Forklift Operator', 'Picker/Packer', 'General Labor', 'Loader/Unloader', 'Order Selector'];
 let SITES_LOADED = false, ATTENDANCE_LOADED = false, TEAM_LOADED = false, OFFICES_LOADED = false, SETTINGS_LOADED = false, DISPUTES_LOADED = false;
 let DISPUTES_CACHE = [];
@@ -370,6 +371,7 @@ async function loadShifts() {
         <td>${pill(s.status)} ${s.onBreak ? '<span class="pill pill-onbreak">On Break</span>' : ''} ${s.needsAttention ? '<span class="pill pill-attention">Needs Attention</span>' : ''}</td>
         <td>
           ${['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}
+          ${['scheduled', 'confirmed', 'in_progress'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="agencyInitiateReplace('${s.id}')">Replace</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="openManagerShiftTimeline('${s.id}')">Timeline</button>
         </td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts yet. Create your first shift.</div>`;
@@ -445,12 +447,92 @@ async function flagNoShow(id) {
   loadShifts(); loadOverview(); loadReplacements(); loadEscalations();
 }
 
+function replacementStageLabel(r) {
+  switch (r.status) {
+    case 'requested': return 'Requested — awaiting agency review';
+    case 'searching': return 'Replacement search in progress';
+    case 'offered': return 'Worker(s) notified';
+    case 'unfilled': return 'No candidates found';
+    case 'filled': return r.client_confirmed_at ? 'Filled' : 'Worker accepted — awaiting client confirmation';
+    case 'completed': return 'Completed';
+    case 'cancelled': return 'Declined by agency';
+    default: return r.status;
+  }
+}
+
 async function loadReplacements() {
   const { replacements } = await api('/manager/replacements');
+  REPLACEMENTS_CACHE = replacements;
   document.getElementById('replacementsTable').innerHTML = replacements.length ? `
-    <table><thead><tr><th>Client</th><th>Job</th><th>Shift Date</th><th>Status</th><th>Candidates Notified</th></tr></thead>
-    <tbody>${replacements.map((r) => `<tr><td>${r.company_name}</td><td>${r.job_title}</td><td>${fmtDate(r.shift_date)}</td><td>${pill(r.status)}</td><td>${r.candidates_notified}</td></tr>`).join('')}</tbody></table>`
+    <table><thead><tr><th>Client</th><th>Job</th><th>Shift Date</th><th>Initiated By</th><th>Stage</th><th>Candidates Notified</th><th></th></tr></thead>
+    <tbody>${replacements.map((r) => `
+      <tr>
+        <td>${r.company_name}</td><td>${r.job_title}</td><td>${fmtDate(r.shift_date)}</td>
+        <td>${r.initiated_by === 'client' ? 'Client' : r.initiated_by === 'agency' ? 'Agency' : 'System (no-show)'}</td>
+        <td>${pill(r.status)} <div style="font-size:12px;color:var(--ink-soft)">${replacementStageLabel(r)}</div></td>
+        <td>${r.candidates_notified}</td>
+        <td>
+          ${r.status === 'requested' ? `
+            <button class="btn btn-primary btn-sm" onclick="startReplacementSearchAction('${r.id}')">Start Search</button>
+            <button class="btn btn-outline btn-sm" onclick="rejectReplacementAction('${r.id}')">Decline</button>` : ''}
+          ${['searching', 'offered', 'unfilled'].includes(r.status) ? `
+            <button class="btn btn-outline btn-sm" onclick="openCandidatePicker('${r.id}')">Pick Worker</button>
+            ${r.status === 'unfilled' ? `<button class="btn btn-outline btn-sm" onclick="startReplacementSearchAction('${r.id}')">Retry Search</button>` : ''}` : ''}
+        </td>
+      </tr>`).join('')}</tbody></table>`
     : `<div class="empty">No replacement requests yet.</div>`;
+}
+
+async function startReplacementSearchAction(id) {
+  try {
+    await api(`/manager/replacements/${id}/start-search`, { method: 'POST' });
+    toast('Search started — eligible workers notified');
+    loadReplacements();
+  } catch (e) { toast(e.message || 'Failed to start search', true); }
+}
+
+async function rejectReplacementAction(id) {
+  const note = prompt('Optional note to the client explaining why (visible to their supervisors):') || '';
+  try {
+    await api(`/manager/replacements/${id}/reject`, { method: 'POST', body: { note } });
+    toast('Request declined');
+    loadReplacements();
+  } catch (e) { toast(e.message || 'Failed to decline request', true); }
+}
+
+async function openCandidatePicker(requestId) {
+  const { candidates, alreadyOffered } = await api(`/manager/replacements/${requestId}/candidates`);
+  openModal(`
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <h3>Pick a Worker</h3>
+    ${candidates.length ? `
+      <div style="max-height:360px;overflow-y:auto">
+        ${candidates.map((c) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+            <div><strong>${c.full_name}</strong><div style="font-size:12px;color:var(--ink-soft)">${c.email || ''} · Load: ${c.load} shift(s)</div></div>
+            <button class="btn btn-primary btn-sm" ${alreadyOffered.includes(c.id) ? 'disabled' : ''} onclick="selectCandidateAction('${requestId}','${c.id}')">${alreadyOffered.includes(c.id) ? 'Already Offered' : 'Offer Shift'}</button>
+          </div>`).join('')}
+      </div>` : `<div class="empty">No eligible workers found right now.</div>`}
+  `);
+}
+
+async function selectCandidateAction(requestId, tempId) {
+  try {
+    await api(`/manager/replacements/${requestId}/select`, { method: 'POST', body: { tempId } });
+    toast('Worker notified');
+    closeModal();
+    loadReplacements();
+  } catch (e) { toast(e.message || 'Failed to notify worker', true); }
+}
+
+async function agencyInitiateReplace(shiftId) {
+  const reason = prompt('Reason for replacement (e.g. call-off, no-show, client request):') || '';
+  if (!confirm('Start a replacement search for this shift now?')) return;
+  try {
+    await api(`/manager/shifts/${shiftId}/replace`, { method: 'POST', body: { reason } });
+    toast('Replacement search started');
+    loadShifts(); loadReplacements();
+  } catch (e) { toast(e.message || 'Failed to start replacement', true); }
 }
 
 async function loadEscalations() {

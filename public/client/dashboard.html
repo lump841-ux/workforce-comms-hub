@@ -568,47 +568,84 @@ async function raiseIssue(shiftId) {
 }
 
 // ===== Replacements =====
+function clientReplacementStageLabel(r) {
+  switch (r.status) {
+    case 'requested': return 'Sent — awaiting agency review';
+    case 'searching': return 'Agency is searching for coverage';
+    case 'offered': return 'Agency has offered the shift to worker(s)';
+    case 'unfilled': return 'No coverage found yet — agency notified';
+    case 'filled': return 'Covered — please confirm below';
+    case 'completed': return 'Completed';
+    case 'cancelled': return 'Declined by agency';
+    default: return r.status;
+  }
+}
+
 async function loadReplacements() {
   const { requests } = await api('/client/replacement-requests');
   document.getElementById('replacementsTable').innerHTML = requests.length ? `
-    <table><thead><tr><th>Role</th><th>Original</th><th>Shift</th><th>Status</th><th>Requested</th></tr></thead>
+    <table><thead><tr><th>Role</th><th>Original</th><th>Shift</th><th>Status</th><th>Requested</th><th></th></tr></thead>
     <tbody>${requests.map((r) => `<tr>
       <td>${r.job_title || '—'}</td>
       <td>${r.original_temp_name || '—'}</td>
       <td>${fmtDate(r.shift_date)} ${r.start_time}–${r.end_time}</td>
-      <td>${pill(r.status)}</td>
+      <td>${pill(r.status)}<div style="font-size:12px;color:var(--ink-soft)">${clientReplacementStageLabel(r)}</div></td>
       <td>${fmtDateTime(r.created_at)}</td>
+      <td>${r.status === 'filled' ? `<button class="btn btn-primary btn-sm" onclick="confirmReplacementAction('${r.id}')">Confirm</button>` : ''}</td>
     </tr>`).join('')}</tbody></table>` : `<div class="empty">No replacement requests yet.</div>`;
 }
+
+async function confirmReplacementAction(id) {
+  try {
+    await api(`/client/replacement-requests/${id}/confirm`, { method: 'POST' });
+    toast('Replacement confirmed');
+    loadReplacements();
+  } catch (e) { toast(e.message || 'Could not confirm replacement', true); }
+}
+
+const REPLACEMENT_REASON_CATEGORIES = [
+  { value: 'no_show', label: 'No-show' },
+  { value: 'called_off', label: 'Called off / sick' },
+  { value: 'performance', label: 'Performance concern' },
+  { value: 'left_early', label: 'Left shift early' },
+  { value: 'schedule_change', label: 'Schedule change needed' },
+  { value: 'other', label: 'Other' }
+];
 
 async function openReplacementModal() {
   const today = new Date().toISOString().slice(0, 10);
   const { shifts } = await api(`/client/shifts?date=${today}`);
   const options = shifts.map((s) => `<option value="${s.id}">${s.temp_name || 'Unassigned'} — ${s.start_time}-${s.end_time}</option>`).join('');
+  const reasonOptions = REPLACEMENT_REASON_CATEGORIES.map((c) => `<option value="${c.value}">${c.label}</option>`).join('');
   const html = `
     <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
       <div class="modal">
         <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
-        <h3>Initiate Replacement Request</h3>
+        <h3>Request a Replacement</h3>
         <label>Shift (today)</label>
         <select id="rep_shift">${options || '<option value="">No shifts scheduled today</option>'}</select>
         <label>Reason</label>
-        <textarea id="rep_reason" rows="4" placeholder="e.g. No-show, called off sick…"></textarea>
+        <select id="rep_reason_cat">${reasonOptions}</select>
+        <label>Note (optional — shared with the agency)</label>
+        <textarea id="rep_note" rows="3" placeholder="Any additional detail…"></textarea>
         <div id="repMsg"></div>
-        <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitReplacementRequest()">Request Replacement</button>
+        <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitReplacementRequest()">Send Request</button>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Your agency will review this request before contacting any worker.</div>
       </div>
     </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
 }
 async function submitReplacementRequest() {
   const shiftId = document.getElementById('rep_shift').value;
-  const reason = document.getElementById('rep_reason').value.trim();
+  const reasonCat = document.getElementById('rep_reason_cat').value;
+  const reasonLabel = (REPLACEMENT_REASON_CATEGORIES.find((c) => c.value === reasonCat) || {}).label || reasonCat;
+  const note = document.getElementById('rep_note').value.trim();
   const msgEl = document.getElementById('repMsg');
   if (!shiftId) { msgEl.innerHTML = `<div class="err">Select a shift</div>`; return; }
   try {
-    await api('/client/replacement-requests', { method: 'POST', body: { shiftId, reason } });
+    await api('/client/replacement-requests', { method: 'POST', body: { shiftId, reason: reasonLabel, note } });
     document.querySelector('.modal-backdrop').remove();
-    toast('Replacement search started');
+    toast('Request sent — awaiting agency review');
     loadReplacements();
   } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
 }

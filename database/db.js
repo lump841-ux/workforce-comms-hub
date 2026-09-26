@@ -47,6 +47,15 @@ function migrate() {
     addColumnIfMissing('shift_photos', 'uploaded_by', 'TEXT');
     addColumnIfMissing('shift_photos', 'uploader_role', "TEXT NOT NULL DEFAULT 'temp'");
     addColumnIfMissing('escalations', 'after_hours', 'INTEGER NOT NULL DEFAULT 0');
+    addColumnIfMissing('replacement_requests', 'initiated_by', "TEXT NOT NULL DEFAULT 'system'");
+    addColumnIfMissing('replacement_requests', 'requested_by', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'reason', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'note', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'reviewed_at', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'reviewed_by', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'client_confirmed_at', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'client_confirmed_by', 'TEXT');
+    addColumnIfMissing('replacement_requests', 'completed_at', 'TEXT');
   } catch (e) {
     console.error('Migration warning:', e.message);
   }

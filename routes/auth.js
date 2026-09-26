@@ -97,6 +97,49 @@ router.post('/temp-invite/:token/accept', (req, res) => {
   res.json({ ok: true, user: req.session.user });
 });
 
+// Agency-issued invite for a client HR contact — mirrors the temp-invite
+// flow above. Nothing is provisioned until the contact opens the link: if
+// their email already has a client_hr login, POST /manager/clients/:id/hr-invite
+// would have linked it immediately without ever generating one of these
+// invites, so by the time we get here we know this is a brand-new contact
+// and always create a fresh client_org + login.
+router.get('/client-invite/:token', (req, res) => {
+  const invite = get(`SELECT ci.*, a.name as agency_name, c.company_name FROM client_invites ci JOIN agencies a ON a.id = ci.agency_id JOIN clients c ON c.id = ci.client_id WHERE ci.token = ?`, [req.params.token]);
+  if (!invite || invite.status !== 'pending') return res.status(404).json({ error: 'This invite link is no longer valid' });
+  res.json({ fullName: invite.full_name, email: invite.email, agencyName: invite.agency_name, companyName: invite.company_name });
+});
+
+router.post('/client-invite/:token/accept', (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) return res.status(400).json({ error: 'Choose a password (6+ characters)' });
+
+  const invite = get('SELECT * FROM client_invites WHERE token = ?', [req.params.token]);
+  if (!invite || invite.status !== 'pending') return res.status(404).json({ error: 'This invite link is no longer valid' });
+
+  const existing = get('SELECT id FROM users WHERE email = ?', [invite.email]);
+  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+
+  const client = get('SELECT company_name FROM clients WHERE id = ?', [invite.client_id]);
+  const clientOrgId = id('corg');
+  run(`INSERT INTO client_orgs (id, company_name) VALUES (?,?)`, [clientOrgId, client ? client.company_name : invite.full_name]);
+  const userId = id('usr');
+  run(
+    `INSERT INTO users (id, client_org_id, role, full_name, email, phone, password_hash) VALUES (?,?, 'client_hr',?,?,?,?)`,
+    [userId, clientOrgId, invite.full_name, invite.email, invite.phone || null, bcrypt.hashSync(password, 10)]
+  );
+  const linkId = id('col');
+  run(
+    `INSERT INTO client_org_agency_links (id, client_org_id, agency_id, client_id, status, initiated_by, approved_at) VALUES (?,?,?,?, 'active', 'agency', datetime('now'))`,
+    [linkId, clientOrgId, invite.agency_id, invite.client_id]
+  );
+  run(`UPDATE client_invites SET status = 'accepted', accepted_at = datetime('now') WHERE id = ?`, [invite.id]);
+
+  const link = get(`SELECT agency_id, client_id FROM client_org_agency_links WHERE id = ?`, [linkId]);
+  req.session.user = { id: userId, role: 'client_hr', full_name: invite.full_name, email: invite.email, agency_id: link.agency_id, client_id: link.client_id, client_org_id: clientOrgId };
+  logAudit({ agencyId: invite.agency_id, actorId: userId, action: 'client_invite_accepted', entityType: 'user', entityId: userId });
+  res.json({ ok: true, user: req.session.user });
+});
+
 // Self-serve client signup — a company can create its own Twanova login
 // before ever talking to an agency (see the "client heard about it first"
 // case). It starts with no agency connected; they link one afterward from

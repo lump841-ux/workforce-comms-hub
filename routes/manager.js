@@ -125,6 +125,22 @@ router.get('/shifts/:id/timeline', (req, res) => {
   res.json(buildShiftTimeline(req.params.id));
 });
 
+// Photo proof gallery — pulls every photo attached to this shift regardless
+// of who uploaded it (temp on-the-job proof, client_hr supervisor photos),
+// so the agency sees the same complete record the timeline references.
+router.get('/shifts/:id/photos', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const shift = get('SELECT id FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  const rows = all(
+    `SELECT p.*, u.full_name as uploader_name FROM shift_photos p
+     LEFT JOIN users u ON u.id = p.uploaded_by
+     WHERE p.shift_id = ? ORDER BY p.created_at DESC`,
+    [req.params.id]
+  );
+  res.json({ photos: rows });
+});
+
 router.post('/shifts', (req, res) => {
   const u = req.session.user;
   const { clientId, tempId, jobTitle, shiftDate, startTime, endTime, notes } = req.body;
@@ -478,6 +494,64 @@ router.post('/clients/:id/hr-contacts', (req, res) => {
   );
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'client_hr_invited', entityType: 'user', entityId: hrId });
   res.json({ ok: true, userId: hrId });
+});
+
+// Self-serve client invite — the preferred path going forward. Like
+// /temps/invite, this never asks the agency to type a password: if the
+// email already has a client_hr login, we link it to this agency right
+// away (nothing to accept); otherwise we send a link and the contact sets
+// their own password when they open it (see /auth/client-invite/:token).
+router.get('/clients/:id/hr-invites', (req, res) => {
+  const u = req.session.user;
+  const client = get('SELECT * FROM clients WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const invites = all(`SELECT id, full_name, email, phone, created_at FROM client_invites WHERE client_id = ? AND agency_id = ? AND status = 'pending' ORDER BY created_at DESC`, [client.id, u.agency_id]);
+  res.json({ pendingInvites: invites });
+});
+
+router.post('/clients/:id/hr-invite', (req, res) => {
+  const u = req.session.user;
+  const client = get('SELECT * FROM clients WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const { fullName, email, phone } = req.body;
+  if (!fullName || !email) return res.status(400).json({ error: 'fullName and email are required' });
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const existingUser = get('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+  if (existingUser) {
+    if (existingUser.role !== 'client_hr') return res.status(409).json({ error: 'That email belongs to a different kind of account' });
+    const existingLink = get(`SELECT id FROM client_org_agency_links WHERE client_org_id = ? AND agency_id = ?`, [existingUser.client_org_id, u.agency_id]);
+    if (existingLink) return res.status(409).json({ error: 'That client is already connected to your agency' });
+    const linkId = id('col');
+    run(
+      `INSERT INTO client_org_agency_links (id, client_org_id, agency_id, client_id, status, initiated_by, approved_at) VALUES (?,?,?,?, 'active', 'agency', datetime('now'))`,
+      [linkId, existingUser.client_org_id, u.agency_id, client.id]
+    );
+    logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'client_hr_linked_existing', entityType: 'user', entityId: existingUser.id });
+    return res.json({ ok: true, userId: existingUser.id, linkedExisting: true });
+  }
+
+  const existingInvite = get(`SELECT id FROM client_invites WHERE email = ? AND agency_id = ? AND status = 'pending'`, [normalizedEmail, u.agency_id]);
+  if (existingInvite) return res.status(409).json({ error: 'There is already a pending invite for that email' });
+
+  const inviteId = id('inv');
+  const token = crypto.randomBytes(24).toString('hex');
+  run(
+    `INSERT INTO client_invites (id, agency_id, client_id, full_name, email, phone, token, invited_by) VALUES (?,?,?,?,?,?,?,?)`,
+    [inviteId, u.agency_id, client.id, fullName, normalizedEmail, phone || null, token, u.id]
+  );
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'client_hr_invited_selfserve', entityType: 'client_invite', entityId: inviteId });
+  const inviteUrl = `${req.protocol}://${req.get('host')}/client-invite.html?token=${token}`;
+  res.json({ ok: true, inviteId, inviteUrl });
+});
+
+router.post('/clients/hr-invites/:id/revoke', (req, res) => {
+  const u = req.session.user;
+  const invite = get(`SELECT * FROM client_invites WHERE id = ? AND agency_id = ? AND status = 'pending'`, [req.params.id, u.agency_id]);
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  run(`UPDATE client_invites SET status = 'revoked' WHERE id = ?`, [invite.id]);
+  logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'client_hr_invite_revoked', entityType: 'client_invite', entityId: invite.id });
+  res.json({ ok: true });
 });
 
 // ===== AI assistant =====

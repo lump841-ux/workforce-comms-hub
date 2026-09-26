@@ -319,6 +319,67 @@ async function main() {
   assert(timelineRes.status === 200 && Array.isArray(timelineRes.body.events) && timelineRes.body.events.length > 5, 'shift timeline aggregates events from across the whole lifecycle');
   assert(timelineRes.body.events.some((e) => e.type === 'escalation' && e.label.includes('emergency')), 'shift timeline includes the emergency event');
 
+  // 17. Client self-serve invite — brand-new contact gets a link instead of
+  // a typed password, mirrors the temp-invite pattern end to end.
+  const ciStamp = Date.now();
+  const clientInviteRes = await request(server, {
+    method: 'POST', path: `/api/manager/clients/${clientId}/hr-invite`, cookie: adminCookie,
+    body: { fullName: 'Nina New Contact', email: `nina${ciStamp}@smoke.test` }
+  });
+  assert(clientInviteRes.status === 200 && clientInviteRes.body.ok && clientInviteRes.body.inviteUrl, 'agency generates a self-serve client invite link');
+  const clientInviteToken = clientInviteRes.body.inviteUrl.split('token=')[1];
+
+  const clientInviteLookup = await request(server, { method: 'GET', path: `/api/auth/client-invite/${clientInviteToken}` });
+  assert(clientInviteLookup.status === 200 && clientInviteLookup.body.fullName === 'Nina New Contact', 'invited contact can look up their pending invite');
+
+  const clientInviteAccept = await request(server, {
+    method: 'POST', path: `/api/auth/client-invite/${clientInviteToken}/accept`,
+    body: { password: 'ninapass1' }
+  });
+  assert(clientInviteAccept.status === 200 && clientInviteAccept.body.ok && clientInviteAccept.body.user.role === 'client_hr', 'contact accepts the client invite and creates their own login');
+  const ninaCookie = firstCookie(clientInviteAccept.setCookie);
+
+  // Inviting the same email again should link instantly instead of issuing
+  // a second invite, same behavior as the existing hr-contacts endpoint.
+  const clientId2Res = await request(server, { method: 'POST', path: '/api/manager/clients', cookie: admin2Cookie, body: { companyName: 'Nina Co' } });
+  const linkInviteRes = await request(server, {
+    method: 'POST', path: `/api/manager/clients/${clientId2Res.body.clientId}/hr-invite`, cookie: admin2Cookie,
+    body: { fullName: 'Nina New Contact', email: `nina${ciStamp}@smoke.test` }
+  });
+  assert(linkInviteRes.status === 200 && linkInviteRes.body.linkedExisting, 'inviting an already-registered email links instantly instead of re-inviting');
+
+  const revokeClientInvite = await request(server, {
+    method: 'POST', path: `/api/manager/clients/${clientId}/hr-invite`, cookie: adminCookie,
+    body: { fullName: 'To Be Revoked', email: `revokeci${ciStamp}@smoke.test` }
+  });
+  const revokeCiId = (await request(server, { method: 'GET', path: `/api/manager/clients/${clientId}/hr-invites`, cookie: adminCookie })).body.pendingInvites.find((i) => i.email === `revokeci${ciStamp}@smoke.test`).id;
+  const revokeCiAction = await request(server, { method: 'POST', path: `/api/manager/clients/hr-invites/${revokeCiId}/revoke`, cookie: adminCookie });
+  assert(revokeCiAction.status === 200 && revokeCiAction.body.ok, 'agency revokes a pending client invite');
+  const revokedCiToken = revokeClientInvite.body.inviteUrl.split('token=')[1];
+  const revokedCiAccept = await request(server, { method: 'POST', path: `/api/auth/client-invite/${revokedCiToken}/accept`, body: { password: 'whatever1' } });
+  assert(revokedCiAccept.status === 404, 'revoked client invite can no longer be accepted');
+
+  // 18. Photo proof gallery — agency and client can both read back photos
+  // uploaded by the worker or by a supervisor, fixing the "photos don't
+  // display" gap (manager/client previously had no GET route at all).
+  const workerPhotoRes = await request(server, {
+    method: 'POST', path: `/api/temp/shifts/${shiftId}/photos`, cookie: tempCookie,
+    body: { dataUrl: 'data:image/png;base64,AAA=', caption: 'Arrived on site' }
+  });
+  assert(workerPhotoRes.status === 200 && workerPhotoRes.body.ok, 'worker uploads a shift photo');
+
+  const supervisorPhotoRes = await request(server, {
+    method: 'POST', path: `/api/client/shifts/${shiftId}/photos`, cookie: supCookie,
+    body: { dataUrl: 'data:image/png;base64,BBB=', caption: 'Confirmed arrival' }
+  });
+  assert(supervisorPhotoRes.status === 200 && supervisorPhotoRes.body.ok, 'supervisor uploads a shift photo');
+
+  const managerPhotosRes = await request(server, { method: 'GET', path: `/api/manager/shifts/${shiftId}/photos`, cookie: adminCookie });
+  assert(managerPhotosRes.status === 200 && managerPhotosRes.body.photos.length === 2, 'agency can see both photos on the shift');
+
+  const clientPhotosRes = await request(server, { method: 'GET', path: `/api/client/shifts/${shiftId}/photos`, cookie: supCookie });
+  assert(clientPhotosRes.status === 200 && clientPhotosRes.body.photos.length === 2, 'supervisor can see both photos on the shift');
+
   // 13. Role enforcement — temp cannot hit manager routes
   const forbidden = await request(server, { method: 'GET', path: '/api/manager/overview', cookie: tempCookie });
   assert(forbidden.status === 403, 'temp is forbidden from manager-only routes');

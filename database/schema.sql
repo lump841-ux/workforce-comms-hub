@@ -91,6 +91,26 @@ CREATE TABLE IF NOT EXISTS temp_invites (
   accepted_at TEXT
 );
 
+-- ============ CLIENT INVITES ============
+-- Mirrors temp_invites: an agency invites a client HR contact via a link
+-- instead of typing a password for them. Nothing is provisioned until the
+-- invitee accepts — either linking their existing client_hr login to this
+-- agency, or creating a brand-new client_org + login, same dual-path logic
+-- already used by POST /manager/clients/:id/hr-contacts.
+CREATE TABLE IF NOT EXISTS client_invites (
+  id TEXT PRIMARY KEY,
+  agency_id TEXT NOT NULL REFERENCES agencies(id),
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT,
+  token TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | revoked
+  invited_by TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  accepted_at TEXT
+);
+
 -- ============ SHIFTS / ASSIGNMENTS ============
 CREATE TABLE IF NOT EXISTS shifts (
   id TEXT PRIMARY KEY,

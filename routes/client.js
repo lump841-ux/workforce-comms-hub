@@ -283,6 +283,21 @@ router.post('/shifts/:id/photos', (req, res) => {
   res.json({ ok: true, photoId });
 });
 
+// Photo proof gallery — same shift_photos rows the agency and worker see,
+// scoped to this supervisor's own client company so no cross-client leakage.
+router.get('/shifts/:id/photos', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT id FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
+  const rows = all(
+    `SELECT p.*, u.full_name as uploader_name FROM shift_photos p
+     LEFT JOIN users u ON u.id = p.uploaded_by
+     WHERE p.shift_id = ? ORDER BY p.created_at DESC`,
+    [req.params.id]
+  );
+  res.json({ photos: rows });
+});
+
 router.get('/shifts/:id/timeline', (req, res) => {
   const u = req.session.user;
   const shift = get('SELECT id FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);

@@ -376,18 +376,62 @@ async function loadShifts() {
 }
 
 async function openManagerShiftTimeline(shiftId) {
-  const { events } = await api(`/manager/shifts/${shiftId}/timeline`);
+  const [{ events }, { photos }] = await Promise.all([
+    api(`/manager/shifts/${shiftId}/timeline`),
+    api(`/manager/shifts/${shiftId}/photos`)
+  ]);
   const html = `
     <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
       <div class="modal" style="max-width:480px">
         <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
         <h3>Shift Timeline</h3>
+        ${renderPhotoGallery(photos)}
         <div style="max-height:420px;overflow-y:auto">
           ${events.length ? events.map((e) => `
             <div style="padding:8px 0;border-bottom:1px solid var(--line)">
               <div style="font-size:13px">${e.label}</div>
               <div style="font-size:11px;color:var(--ink-soft)">${fmtDateTime(e.at)}</div>
             </div>`).join('') : '<div class="empty">No events yet.</div>'}
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// Shared photo-proof gallery: thumbnail grid + click-to-enlarge lightbox.
+// Reused by both the manager and client shift timeline modals — same
+// shift_photos rows, same markup, so photos look identical everywhere
+// they're surfaced per the spec's "fix photo display end to end" ask.
+function renderPhotoGallery(photos) {
+  window.__PHOTO_CACHE = window.__PHOTO_CACHE || {};
+  (photos || []).forEach((p) => { window.__PHOTO_CACHE[p.id] = p; });
+  if (!photos || !photos.length) {
+    return `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">PHOTOS</div><div class="empty" style="padding:10px 0">No photos uploaded yet.</div></div>`;
+  }
+  return `
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">PHOTOS (${photos.length})</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+        ${photos.map((p) => `
+          <div onclick="openPhotoLightbox('${p.id}')" style="cursor:pointer;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--line)">
+            <img src="${p.data_url}" alt="Shift photo" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=&quot;display:flex;align-items:center;justify-content:center;height:100%;font-size:20px;color:var(--ink-soft)&quot;>📷</div>'" />
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function openPhotoLightbox(photoId) {
+  const p = (window.__PHOTO_CACHE || {})[photoId];
+  if (!p) return;
+  const who = p.uploader_name || (p.uploader_role === 'client_hr' ? 'Supervisor' : 'Worker');
+  const html = `
+    <div class="modal-backdrop" style="z-index:60" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:640px;padding:16px">
+        <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
+        <img src="${p.data_url}" alt="Shift photo" style="width:100%;max-height:70vh;object-fit:contain;border-radius:8px" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=&quot;empty&quot;>Photo could not be loaded.</div>')" />
+        <div style="margin-top:10px;font-size:12.5px;color:var(--ink-soft)">
+          Uploaded by ${who} — ${fmtDateTime(p.created_at)}
+          ${p.caption ? `<div style="margin-top:4px;color:var(--ink)">${p.caption}</div>` : ''}
         </div>
       </div>
     </div>`;
@@ -543,23 +587,33 @@ function openHrContactModal(clientId, companyName) {
   openModal(`
     <span class="modal-close" onclick="closeModal()">&times;</span>
     <h3>Add HR Contact — ${companyName}</h3>
-    <p style="margin:0 0 14px;font-size:13px;color:var(--ink-soft)">If this person already has a Twanova client login (say, from another agency), we'll just connect it to your agency instead of creating a duplicate.</p>
+    <p style="margin:0 0 14px;font-size:13px;color:var(--ink-soft)">We'll generate an invite link. If this person already has a Twanova client login (say, from another agency), we'll just connect it to your agency right away instead — no link needed. Otherwise, they open the link to set their own password.</p>
     <label>Full name</label><input id="h_fullName" />
     <label>Email</label><input id="h_email" type="email" />
-    <label>Temporary password <span style="font-weight:400;color:var(--ink-soft)">(only used if they don't already have a login)</span></label>
-    <input id="h_tempPw" placeholder="Shared with the contact separately" />
-    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitHrContact('${clientId}')">Add HR Contact</button>`);
+    <label>Phone (optional)</label><input id="h_phone" />
+    <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitHrContact('${clientId}')">Add HR Contact</button>
+    <div id="hrInviteResult"></div>`);
 }
 async function submitHrContact(clientId) {
   const fullName = document.getElementById('h_fullName').value.trim();
   const email = document.getElementById('h_email').value.trim();
-  const tempPassword = document.getElementById('h_tempPw').value;
+  const phone = document.getElementById('h_phone').value;
   if (!fullName || !email) return toast('Full name and email are required', true);
   try {
-    const res = await api(`/manager/clients/${clientId}/hr-contacts`, { method: 'POST', body: { fullName, email, tempPassword } });
-    closeModal();
-    toast(res.linkedExisting ? 'Connected to their existing client login' : 'HR contact added');
-    loadClients();
+    const res = await api(`/manager/clients/${clientId}/hr-invite`, { method: 'POST', body: { fullName, email, phone } });
+    if (res.linkedExisting) {
+      closeModal();
+      toast('Connected to their existing client login');
+      loadClients();
+      return;
+    }
+    document.getElementById('hrInviteResult').innerHTML = `
+      <div style="margin-top:16px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--blue-light)">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Invite link — send this to ${fullName.split(' ')[0]}</div>
+        <input readonly value="${res.inviteUrl}" onclick="this.select()" style="font-size:12px" />
+        <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="navigator.clipboard.writeText('${res.inviteUrl}');toast('Copied')">Copy link</button>
+      </div>`;
+    toast('Invite created'); loadClients();
   } catch (e) { toast(e.message, true); }
 }
 

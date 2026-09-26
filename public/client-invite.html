@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Accept your invite — Workforce Communications Hub</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="auth-page-wrap">
+  <div class="auth-topband">
+    <img src="/brand-logo-compact.png" alt="Twanova" />
+    <div class="band-name">Workforce Communications Hub</div>
+  </div>
+  <div class="center-screen">
+    <div class="auth-card">
+      <div id="loadState">Checking your invite…</div>
+      <div id="inviteForm" style="display:none;">
+        <p style="margin:0 0 14px;font-size:14px;color:var(--ink-soft);">
+          <strong id="ivName"></strong> is invited to manage <strong id="ivCompany"></strong>'s account with <strong id="ivAgency"></strong> on Twanova.
+          Set a password to finish creating your login.
+        </p>
+        <label>Email</label>
+        <input id="ivEmail" disabled />
+        <label>Choose a password</label>
+        <input type="password" id="password" required minlength="6" />
+        <button class="btn btn-primary btn-block" style="margin-top:20px" id="acceptBtn">Create my account</button>
+        <div id="msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/app.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get('token');
+const loadState = document.getElementById('loadState');
+
+(async () => {
+  if (!token) { loadState.textContent = 'This invite link is missing its token.'; return; }
+  try {
+    const res = await fetch('/api/auth/client-invite/' + token);
+    const data = await res.json();
+    if (!res.ok) { loadState.textContent = data.error || 'This invite link is no longer valid.'; return; }
+    document.getElementById('ivName').textContent = data.fullName;
+    document.getElementById('ivAgency').textContent = data.agencyName;
+    document.getElementById('ivCompany').textContent = data.companyName;
+    document.getElementById('ivEmail').value = data.email;
+    loadState.style.display = 'none';
+    document.getElementById('inviteForm').style.display = 'block';
+  } catch (e) {
+    loadState.textContent = 'Could not load this invite. Try again in a moment.';
+  }
+})();
+
+document.getElementById('acceptBtn').addEventListener('click', async () => {
+  const msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  const password = document.getElementById('password').value;
+  try {
+    await api('/auth/client-invite/' + token + '/accept', { method: 'POST', body: { password } });
+    window.location.href = '/client/dashboard.html';
+  } catch (e) {
+    msg.innerHTML = `<div class="err">${e.message}</div>`;
+  }
+});
+</script>
+</body>
+</html>

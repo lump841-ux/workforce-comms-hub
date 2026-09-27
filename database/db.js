@@ -56,6 +56,17 @@ function migrate() {
     addColumnIfMissing('replacement_requests', 'client_confirmed_at', 'TEXT');
     addColumnIfMissing('replacement_requests', 'client_confirmed_by', 'TEXT');
     addColumnIfMissing('replacement_requests', 'completed_at', 'TEXT');
+    // Phase 3 — Archive/File Away/Remove: archive-over-delete for the four
+    // primary record types. archived_at IS NULL means "active"; setting it
+    // hides the row from default listings without touching history.
+    addColumnIfMissing('clients', 'archived_at', 'TEXT');
+    addColumnIfMissing('clients', 'archived_by', 'TEXT');
+    addColumnIfMissing('users', 'archived_at', 'TEXT');
+    addColumnIfMissing('users', 'archived_by', 'TEXT');
+    addColumnIfMissing('shifts', 'archived_at', 'TEXT');
+    addColumnIfMissing('shifts', 'archived_by', 'TEXT');
+    addColumnIfMissing('escalations', 'archived_at', 'TEXT');
+    addColumnIfMissing('escalations', 'archived_by', 'TEXT');
   } catch (e) {
     console.error('Migration warning:', e.message);
   }

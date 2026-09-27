@@ -478,6 +478,83 @@ async function main() {
   const noAuth = await request(server, { method: 'GET', path: '/api/manager/overview' });
   assert(noAuth.status === 401, 'unauthenticated request to manager route is rejected');
 
+  // 15. Phase 3 — Archive / File Away / Remove
+  // Shift: archive hides it from the default list but it stays visible via includeArchived
+  // and shows up in the unified archive summary; restore brings it back; delete is blocked
+  // until archived, then blocked again because it has an escalation/replacement referencing it.
+  const archiveShiftRes = await request(server, { method: 'POST', path: `/api/manager/shifts/${shiftId}/archive`, cookie: adminCookie });
+  assert(archiveShiftRes.status === 200 && archiveShiftRes.body.ok, 'shift archives successfully');
+  const shiftsAfterArchive = await request(server, { method: 'GET', path: '/api/manager/shifts', cookie: adminCookie });
+  assert(!shiftsAfterArchive.body.shifts.some((s) => s.id === shiftId), 'archived shift is hidden from default shifts list');
+  const archiveSummaryWithShift = await request(server, { method: 'GET', path: '/api/manager/archive', cookie: adminCookie });
+  assert(archiveSummaryWithShift.body.shifts.some((s) => s.id === shiftId), 'archived shift appears in the unified archive summary');
+  const deleteBeforeArchiveCheck = await request(server, { method: 'POST', path: `/api/manager/shifts/${shift4Id}/archive`, cookie: adminCookie });
+  assert(deleteBeforeArchiveCheck.status === 200, 'a different, not-yet-deleted shift can also be archived independently');
+  const restoreShiftRes = await request(server, { method: 'POST', path: `/api/manager/shifts/${shiftId}/restore`, cookie: adminCookie });
+  assert(restoreShiftRes.status === 200 && restoreShiftRes.body.ok, 'shift restores successfully');
+  const shiftsAfterRestore = await request(server, { method: 'GET', path: '/api/manager/shifts', cookie: adminCookie });
+  assert(shiftsAfterRestore.body.shifts.some((s) => s.id === shiftId), 'restored shift reappears in the default shifts list');
+
+  // Deleting a never-archived shift should be rejected with the archive-first guard.
+  // (shift4 was archived above for the independent-archive check, so re-use shift2 which was never archived)
+  const deleteNeverArchivedRes = await request(server, { method: 'DELETE', path: `/api/manager/shifts/${shift2Id}`, cookie: adminCookie });
+  assert(deleteNeverArchivedRes.status === 400 && /archive/i.test(deleteNeverArchivedRes.body.error || ''), 'deleting a never-archived shift is rejected until it is archived first');
+
+  // shift4 is archived and has a replacement_request referencing it, so a hard delete
+  // should fail with the "has related history" message rather than a raw SQL error.
+  const deleteShiftWithHistoryRes = await request(server, { method: 'DELETE', path: `/api/manager/shifts/${shift4Id}`, cookie: adminCookie });
+  assert(deleteShiftWithHistoryRes.status === 400 && /history/i.test(deleteShiftWithHistoryRes.body.error || ''), 'deleting an archived shift with related history (replacement request) is blocked with a friendly message');
+
+  // A brand-new shift with no history archives and then deletes cleanly.
+  const shift5Res = await request(server, {
+    method: 'POST', path: '/api/manager/shifts', cookie: adminCookie,
+    body: { clientId, tempId, jobTitle: 'Warehouse Associate', shiftDate: '2020-05-01', startTime: '09:00', endTime: '17:00' }
+  });
+  const shift5Id = shift5Res.body.shiftId;
+  await request(server, { method: 'POST', path: `/api/manager/shifts/${shift5Id}/archive`, cookie: adminCookie });
+  const deleteCleanShiftRes = await request(server, { method: 'DELETE', path: `/api/manager/shifts/${shift5Id}`, cookie: adminCookie });
+  assert(deleteCleanShiftRes.status === 200 && deleteCleanShiftRes.body.ok, 'an archived shift with no related history deletes permanently');
+  const archiveSummaryAfterDelete = await request(server, { method: 'GET', path: '/api/manager/archive', cookie: adminCookie });
+  assert(!archiveSummaryAfterDelete.body.shifts.some((s) => s.id === shift5Id), 'permanently deleted shift no longer appears anywhere, including the archive summary');
+
+  // Client archive/restore
+  const archiveClientRes = await request(server, { method: 'POST', path: `/api/manager/clients/${clientId}/archive`, cookie: adminCookie });
+  assert(archiveClientRes.status === 200 && archiveClientRes.body.ok, 'client archives successfully');
+  const clientsAfterArchive = await request(server, { method: 'GET', path: '/api/manager/clients', cookie: adminCookie });
+  assert(!clientsAfterArchive.body.clients.some((c) => c.id === clientId), 'archived client is hidden from default clients list');
+  const restoreClientRes = await request(server, { method: 'POST', path: `/api/manager/clients/${clientId}/restore`, cookie: adminCookie });
+  assert(restoreClientRes.status === 200 && restoreClientRes.body.ok, 'client restores successfully');
+  const clientsAfterRestore = await request(server, { method: 'GET', path: '/api/manager/clients', cookie: adminCookie });
+  assert(clientsAfterRestore.body.clients.some((c) => c.id === clientId), 'restored client reappears in the default clients list');
+
+  // Worker (temp) archive folds into the existing active=0 login-block behavior.
+  const archiveWorkerRes = await request(server, { method: 'POST', path: `/api/manager/temps/${tempId}/archive`, cookie: adminCookie });
+  assert(archiveWorkerRes.status === 200 && archiveWorkerRes.body.ok, 'worker archives successfully');
+  const workerLoginAfterArchive = await request(server, { method: 'POST', path: '/api/auth/login', body: { email: `temp${stamp}@smoke.test`, password: 'temp-does-not-matter-check-status' } });
+  assert(workerLoginAfterArchive.status !== 200, 'archived worker cannot log in (archive folds into the active flag)');
+  const restoreWorkerRes = await request(server, { method: 'POST', path: `/api/manager/temps/${tempId}/restore`, cookie: adminCookie });
+  assert(restoreWorkerRes.status === 200 && restoreWorkerRes.body.ok, 'worker restores successfully');
+  const archiveSummaryAfterWorkerRestore = await request(server, { method: 'GET', path: '/api/manager/archive', cookie: adminCookie });
+  assert(!archiveSummaryAfterWorkerRestore.body.workers.some((w) => w.id === tempId), 'restored worker no longer appears in the archive summary');
+
+  // Escalation archive/restore (reuse the emergency escalation raised earlier).
+  const archiveEscRes = await request(server, { method: 'POST', path: `/api/manager/escalations/${emergencyEsc.id}/archive`, cookie: adminCookie });
+  assert(archiveEscRes.status === 200 && archiveEscRes.body.ok, 'escalation archives successfully');
+  const escalationsAfterArchive = await request(server, { method: 'GET', path: '/api/manager/escalations', cookie: adminCookie });
+  assert(!escalationsAfterArchive.body.escalations.some((e) => e.id === emergencyEsc.id), 'archived escalation is hidden from the default escalations list');
+  const archiveSummaryWithEsc = await request(server, { method: 'GET', path: '/api/manager/archive', cookie: adminCookie });
+  assert(archiveSummaryWithEsc.body.escalations.some((e) => e.id === emergencyEsc.id), 'archived escalation appears in the unified archive summary');
+  const restoreEscRes = await request(server, { method: 'POST', path: `/api/manager/escalations/${emergencyEsc.id}/restore`, cookie: adminCookie });
+  assert(restoreEscRes.status === 200 && restoreEscRes.body.ok, 'escalation restores successfully');
+  const escalationsAfterRestore = await request(server, { method: 'GET', path: '/api/manager/escalations', cookie: adminCookie });
+  assert(escalationsAfterRestore.body.escalations.some((e) => e.id === emergencyEsc.id), 'restored escalation reappears in the default escalations list');
+
+  // Cross-tenant / auth guards on the new archive endpoints.
+  const archiveNoAuth = await request(server, { method: 'GET', path: '/api/manager/archive' });
+  assert(archiveNoAuth.status === 401, 'unauthenticated request to the unified archive endpoint is rejected');
+  const archiveOtherAgencyClient = await request(server, { method: 'POST', path: `/api/manager/clients/${clientId}/archive`, cookie: admin2Cookie });
+  assert(archiveOtherAgencyClient.status === 404, 'a different agency cannot archive another agency\'s client');
+
   server.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);

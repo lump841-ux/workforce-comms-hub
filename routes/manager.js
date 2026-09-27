@@ -7,6 +7,7 @@ const { requireRole } = require('../middleware/auth');
 const { manualFlagNoShow, scanForNoShows } = require('../services/noshow');
 const { startReplacementSearch, findCandidates, selectReplacementCandidate, rejectReplacementRequest } = require('../services/replacement');
 const { acknowledgeEscalation, resolveEscalation } = require('../services/escalation');
+const archiveSvc = require('../services/archive');
 const { generateManagerBriefing, answerQuestion } = require('../services/ai');
 const { logAudit } = require('../services/audit');
 const { buildShiftTimeline } = require('../services/timeline');
@@ -104,11 +105,12 @@ function annotateOpsFlags(shifts, agencyId) {
 // ===== Shifts =====
 router.get('/shifts', (req, res) => {
   const agencyId = req.session.user.agency_id;
-  const { date, status, clientId, tempId } = req.query;
+  const { date, status, clientId, tempId, includeArchived } = req.query;
   let sql = `SELECT s.*, c.company_name, c.site_name, u.full_name as temp_name FROM shifts s
              JOIN clients c ON c.id = s.client_id LEFT JOIN users u ON u.id = s.temp_id
              WHERE s.agency_id = ?`;
   const params = [agencyId];
+  if (!includeArchived) sql += ` AND s.archived_at IS NULL`;
   if (date) { sql += ` AND s.shift_date = ?`; params.push(date); }
   if (status) { sql += ` AND s.status = ?`; params.push(status); }
   if (clientId) { sql += ` AND s.client_id = ?`; params.push(clientId); }
@@ -194,6 +196,37 @@ router.post('/shifts/:id/replace', (req, res) => {
   const { reason, note } = req.body;
   const reqId = startReplacementSearch({ shift, initiatedBy: 'agency', requestedBy: u.id, reason: reason || null, note: note || null, reviewedBy: u.id });
   res.json({ ok: true, requestId: reqId });
+});
+
+// ===== Archive / File Away / Remove (shifts) =====
+// Archive-over-delete: an archived shift keeps its lifecycle status
+// untouched (completed/cancelled/no_show/etc.) and simply drops off the
+// active Shifts screen; it still shows up in the Archive tab and in any
+// history/report queries that don't filter on archived_at.
+router.post('/shifts/:id/archive', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  archiveSvc.archiveShift({ shift, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.post('/shifts/:id/restore', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  archiveSvc.restoreShift({ shift, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.delete('/shifts/:id', (req, res) => {
+  const u = req.session.user;
+  const shift = get('SELECT * FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
+  try {
+    archiveSvc.deleteShift({ shift, actorId: u.id, agencyId: u.agency_id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ===== Replacement requests =====
@@ -283,7 +316,7 @@ router.get('/escalations', (req, res) => {
   const rows = all(
     `SELECT e.*, c.company_name, s.job_title, s.shift_date FROM escalations e
      LEFT JOIN clients c ON c.id = e.client_id LEFT JOIN shifts s ON s.id = e.shift_id
-     WHERE e.agency_id = ? ORDER BY e.tier DESC, e.created_at DESC LIMIT 100`,
+     WHERE e.agency_id = ? AND e.archived_at IS NULL ORDER BY e.tier DESC, e.created_at DESC LIMIT 100`,
     [agencyId]
   );
   res.json({ escalations: rows });
@@ -297,6 +330,42 @@ router.post('/escalations/:id/acknowledge', (req, res) => {
 router.post('/escalations/:id/resolve', (req, res) => {
   resolveEscalation(req.params.id, req.session.user.id);
   res.json({ ok: true });
+});
+
+// ===== Archive / File Away / Remove (escalations / issues) =====
+router.post('/escalations/:id/archive', (req, res) => {
+  const u = req.session.user;
+  const escalation = get('SELECT * FROM escalations WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!escalation) return res.status(404).json({ error: 'Escalation not found' });
+  archiveSvc.archiveEscalation({ escalation, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.post('/escalations/:id/restore', (req, res) => {
+  const u = req.session.user;
+  const escalation = get('SELECT * FROM escalations WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!escalation) return res.status(404).json({ error: 'Escalation not found' });
+  archiveSvc.restoreEscalation({ escalation, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.delete('/escalations/:id', (req, res) => {
+  const u = req.session.user;
+  const escalation = get('SELECT * FROM escalations WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!escalation) return res.status(404).json({ error: 'Escalation not found' });
+  try {
+    archiveSvc.deleteEscalation({ escalation, actorId: u.id, agencyId: u.agency_id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ===== Unified Archive view =====
+// Everything with archived_at set across clients/shifts/workers/escalations,
+// for the Archive tab (search + Restore/Delete actions per row).
+router.get('/archive', (req, res) => {
+  const agencyId = req.session.user.agency_id;
+  const summary = archiveSvc.getArchiveSummary(agencyId, req.query.search || '');
+  res.json(summary);
 });
 
 // ===== Temps roster =====
@@ -325,6 +394,37 @@ router.post('/temps/:id/reactivate', (req, res) => {
   run(`UPDATE users SET active = 1 WHERE id = ?`, [temp.id]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_reactivated', entityType: 'user', entityId: temp.id });
   res.json({ ok: true });
+});
+
+// ===== Archive / File Away / Remove (workers) =====
+// Archiving a worker is functionally the same as deactivating them (login
+// blocked immediately) plus recording archived_at/by so they show up in the
+// unified Archive tab; kept as separate endpoints from deactivate/reactivate
+// above so existing integrations against those keep working unchanged.
+router.post('/temps/:id/archive', (req, res) => {
+  const u = req.session.user;
+  const worker = get(`SELECT * FROM users WHERE id = ? AND agency_id = ? AND role = 'temp'`, [req.params.id, u.agency_id]);
+  if (!worker) return res.status(404).json({ error: 'Worker not found' });
+  archiveSvc.archiveWorker({ worker, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.post('/temps/:id/restore', (req, res) => {
+  const u = req.session.user;
+  const worker = get(`SELECT * FROM users WHERE id = ? AND agency_id = ? AND role = 'temp'`, [req.params.id, u.agency_id]);
+  if (!worker) return res.status(404).json({ error: 'Worker not found' });
+  archiveSvc.restoreWorker({ worker, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.delete('/temps/:id', (req, res) => {
+  const u = req.session.user;
+  const worker = get(`SELECT * FROM users WHERE id = ? AND agency_id = ? AND role = 'temp'`, [req.params.id, u.agency_id]);
+  if (!worker) return res.status(404).json({ error: 'Worker not found' });
+  try {
+    archiveSvc.deleteWorker({ worker, actorId: u.id, agencyId: u.agency_id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 router.post('/temps/invites/:id/revoke', (req, res) => {
@@ -398,7 +498,7 @@ router.get('/temps/roster', (req, res) => {
 // ===== Clients =====
 router.get('/clients', (req, res) => {
   const agencyId = req.session.user.agency_id;
-  const rows = all(`SELECT * FROM clients WHERE agency_id = ? ORDER BY company_name ASC`, [agencyId]);
+  const rows = all(`SELECT * FROM clients WHERE agency_id = ? AND archived_at IS NULL ORDER BY company_name ASC`, [agencyId]);
   const pendingRequests = all(
     `SELECT l.id as linkId, l.created_at, c.id as clientId, c.company_name, c.site_name, co.company_name as client_org_name
      FROM client_org_agency_links l
@@ -418,7 +518,7 @@ router.get('/clients', (req, res) => {
 router.get('/clients/roster', (req, res) => {
   const agencyId = req.session.user.agency_id;
   const managerId = req.session.user.id;
-  const clients = all(`SELECT * FROM clients WHERE agency_id = ? ORDER BY company_name ASC`, [agencyId]);
+  const clients = all(`SELECT * FROM clients WHERE agency_id = ? AND archived_at IS NULL ORDER BY company_name ASC`, [agencyId]);
 
   const byCompany = new Map();
   for (const c of clients) {
@@ -513,6 +613,33 @@ router.post('/clients/connection-requests/:linkId/decline', (req, res) => {
   run(`UPDATE client_org_agency_links SET status = 'declined' WHERE id = ?`, [link.id]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'client_connection_declined', entityType: 'client_org_agency_link', entityId: link.id });
   res.json({ ok: true });
+});
+
+// ===== Archive / File Away / Remove (clients) =====
+router.post('/clients/:id/archive', (req, res) => {
+  const u = req.session.user;
+  const client = get('SELECT * FROM clients WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  archiveSvc.archiveClient({ client, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.post('/clients/:id/restore', (req, res) => {
+  const u = req.session.user;
+  const client = get('SELECT * FROM clients WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  archiveSvc.restoreClient({ client, actorId: u.id, agencyId: u.agency_id });
+  res.json({ ok: true });
+});
+router.delete('/clients/:id', (req, res) => {
+  const u = req.session.user;
+  const client = get('SELECT * FROM clients WHERE id = ? AND agency_id = ?', [req.params.id, u.agency_id]);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  try {
+    archiveSvc.deleteClient({ client, actorId: u.id, agencyId: u.agency_id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ===== Team management (invite temps + client HR contacts) =====

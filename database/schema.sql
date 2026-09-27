@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS clients (
   company_name TEXT NOT NULL,
   site_name TEXT,
   address TEXT,
+  archived_at TEXT,
+  archived_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -52,6 +54,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   avatar_url TEXT,
   active INTEGER NOT NULL DEFAULT 1,
+  archived_at TEXT,
+  archived_by TEXT REFERENCES users(id),
   language_pref TEXT NOT NULL DEFAULT 'en',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -142,6 +146,8 @@ CREATE TABLE IF NOT EXISTS shifts (
   left_early_by TEXT REFERENCES users(id),
   cancel_reason_category TEXT,
   cancel_reason TEXT,
+  archived_at TEXT,
+  archived_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -264,6 +270,8 @@ CREATE TABLE IF NOT EXISTS escalations (
   after_hours INTEGER NOT NULL DEFAULT 0,
   summary TEXT,
   assigned_to TEXT REFERENCES users(id),
+  archived_at TEXT,
+  archived_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   acknowledged_at TEXT,
   resolved_at TEXT

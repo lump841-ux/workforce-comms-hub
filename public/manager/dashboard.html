@@ -28,6 +28,7 @@
     <a class="navlink" data-tab="analytics" data-icon="📈"><span class="nl-icon">📈</span><span class="nl-label">Reports</span></a>
     <a class="navlink" data-tab="team" data-icon="🧑‍🤝‍🧑"><span class="nl-icon">🧑‍🤝‍🧑</span><span class="nl-label">Team</span></a>
     <a class="navlink" data-tab="offices" data-icon="🏬"><span class="nl-icon">🏬</span><span class="nl-label">Offices</span></a>
+    <a class="navlink" data-tab="archive" data-icon="🗄"><span class="nl-icon">🗄</span><span class="nl-label">Archive</span></a>
     <a class="navlink" data-tab="settings" data-icon="⚙️"><span class="nl-icon">⚙️</span><span class="nl-label">Settings</span></a>
     <div class="sidebar-foot">
       <div class="user-chip"><div class="avatar" id="avatar">?</div><div><div class="u-name" id="uName">—</div><div class="u-role" id="uRole">Manager</div></div></div>
@@ -243,6 +244,31 @@
       </div>
     </div>
 
+    <div id="tab-archive" style="display:none">
+      <div class="page-head">
+        <div><div class="page-title">Archive</div><div class="page-sub">Archived clients, shifts, workers, and issues. Restore them or delete permanently once their history is no longer needed.</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <input id="archiveSearch" placeholder="Search archived records…" oninput="loadArchive()" style="max-width:320px" />
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin:0 0 10px">Clients</h3>
+        <div id="archiveClientsTable"></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin:0 0 10px">Shifts</h3>
+        <div id="archiveShiftsTable"></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin:0 0 10px">Workers</h3>
+        <div id="archiveWorkersTable"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px">Issues</h3>
+        <div id="archiveEscalationsTable"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -276,8 +302,8 @@ async function boot() {
   setInterval(() => { loadOverview(); loadQuickShiftSummary(); loadEscalations(); loadReplacements(); loadConversations(); }, 20000);
 }
 
-const ALL_TABS = ['overview', 'shifts', 'replacements', 'escalations', 'messages', 'clients', 'temps', 'analytics', 'sites', 'attendance', 'team', 'offices', 'settings'];
-const TAB_TITLES = { overview: 'Overview', shifts: 'Shifts', replacements: 'Replacements', escalations: 'Issues', messages: 'Messages', clients: 'Clients', temps: 'Workers', analytics: 'Reports', sites: 'Sites', attendance: 'Attendance', team: 'Team', offices: 'Offices', settings: 'Settings' };
+const ALL_TABS = ['overview', 'shifts', 'replacements', 'escalations', 'messages', 'clients', 'temps', 'analytics', 'sites', 'attendance', 'team', 'offices', 'settings', 'archive'];
+const TAB_TITLES = { overview: 'Overview', shifts: 'Shifts', replacements: 'Replacements', escalations: 'Issues', messages: 'Messages', clients: 'Clients', temps: 'Workers', analytics: 'Reports', sites: 'Sites', attendance: 'Attendance', team: 'Team', offices: 'Offices', settings: 'Settings', archive: 'Archive' };
 function switchTab(tab) {
   document.querySelectorAll('.navlink').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
   ALL_TABS.forEach((t) => (document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none'));
@@ -289,6 +315,7 @@ function switchTab(tab) {
   if (tab === 'offices' && !OFFICES_LOADED) loadOffices();
   if (tab === 'settings' && !SETTINGS_LOADED) loadSettings();
   if (tab === 'escalations' && !DISPUTES_LOADED) loadTimeDisputes();
+  if (tab === 'archive') loadArchive();
 }
 function toggleMobileNav(force) {
   const sidebar = document.getElementById('sidebarNav');
@@ -373,8 +400,16 @@ async function loadShifts() {
           ${['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}
           ${['scheduled', 'confirmed', 'in_progress'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="agencyInitiateReplace('${s.id}')">Replace</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="openManagerShiftTimeline('${s.id}')">Timeline</button>
+          <button class="icon-btn" title="Archive" onclick="archiveShiftAction('${s.id}')">🗄</button>
         </td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts yet. Create your first shift.</div>`;
+}
+
+async function archiveShiftAction(id) {
+  if (!confirm('Archive this shift? It will be hidden from the active list but kept in the Archive tab, where it can be restored or permanently deleted.')) return;
+  await api(`/manager/shifts/${id}/archive`, { method: 'POST' });
+  toast('Shift archived');
+  loadShifts();
 }
 
 async function openManagerShiftTimeline(shiftId) {
@@ -548,11 +583,18 @@ async function loadEscalations() {
         <td>
           ${e.status === 'open' ? `<button class="btn btn-outline btn-sm" onclick="ackEsc('${e.id}')">Acknowledge</button>` : ''}
           ${e.status !== 'resolved' ? `<button class="btn btn-primary btn-sm" onclick="resolveEsc('${e.id}')">Resolve</button>` : ''}
+          <button class="icon-btn" title="Archive" onclick="archiveEscAction('${e.id}')">🗄</button>
         </td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No escalations. All clear.</div>`;
 }
 async function ackEsc(id) { await api(`/manager/escalations/${id}/acknowledge`, { method: 'POST' }); loadEscalations(); loadOverview(); }
 async function resolveEsc(id) { await api(`/manager/escalations/${id}/resolve`, { method: 'POST' }); loadEscalations(); loadOverview(); toast('Escalation resolved'); }
+async function archiveEscAction(id) {
+  if (!confirm('Archive this issue? It will be hidden from the active list but kept in the Archive tab.')) return;
+  await api(`/manager/escalations/${id}/archive`, { method: 'POST' });
+  toast('Issue archived');
+  loadEscalations(); loadOverview();
+}
 
 async function loadConversations() {
   const { conversations } = await api('/conversations');
@@ -648,7 +690,7 @@ function renderClientsTable() {
         <td><span class="pill pill-${co.status}">${co.status.charAt(0).toUpperCase() + co.status.slice(1)}</span></td>
         <td>
           <button class="icon-btn" title="HR Contact" onclick="openHrContactModal('${co.primaryClientId}','${co.companyName.replace(/'/g,"\\'")}')">📁</button>
-          <button class="icon-btn" title="More">⋯</button>
+          <button class="icon-btn" title="More" onclick="openClientActionMenu(event,'${co.primaryClientId}','${co.companyName.replace(/'/g,"\\'")}')">⋯</button>
         </td>
       </tr>`;
     }).join('')}</tbody></table>`
@@ -663,6 +705,27 @@ async function declineConnection(linkId) {
   if (!confirm('Decline this client\'s connection request?')) return;
   await api(`/manager/clients/connection-requests/${linkId}/decline`, { method: 'POST' });
   toast('Connection declined'); loadClients();
+}
+
+function openClientActionMenu(evt, clientId, companyName) {
+  evt.stopPropagation();
+  document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove());
+  const menu = document.createElement('div');
+  menu.className = 'dropdown-menu';
+  menu.style.cssText = 'position:fixed;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:1000;min-width:160px;padding:4px';
+  const rect = evt.target.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = (rect.left - 100) + 'px';
+  menu.innerHTML = `
+    <div class="dropdown-item" style="padding:8px 12px;cursor:pointer;font-size:13px" onclick="archiveClientAction('${clientId}');this.closest('.dropdown-menu').remove()">Archive ${companyName}</div>`;
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', function closeIt() { menu.remove(); document.removeEventListener('click', closeIt); }), 0);
+}
+async function archiveClientAction(clientId) {
+  if (!confirm('Archive this client? They will be hidden from the active Clients list but kept in the Archive tab, where they can be restored or permanently deleted.')) return;
+  await api(`/manager/clients/${clientId}/archive`, { method: 'POST' });
+  toast('Client archived');
+  loadClients();
 }
 
 function openHrContactModal(clientId, companyName) {
@@ -742,8 +805,8 @@ function renderWorkersTable() {
           <div class="attendance-bar"><div class="attendance-bar-fill ${w.attendanceRate >= 90 ? 'att-high' : w.attendanceRate >= 70 ? 'att-mid' : 'att-low'}" style="width:${w.attendanceRate}%"></div></div>` : '<span style="color:var(--ink-soft)">—</span>'}</td>
         <td onclick="event.stopPropagation()">
           ${w.isInvite ? `<button class="btn btn-outline btn-sm" onclick="revokeInvite('${w.id}')">Revoke</button>`
-            : w.status === 'active' ? `<button class="icon-btn" title="Deactivate" onclick="deactivateTemp('${w.id}')">✏️</button><button class="icon-btn" title="Message" onclick="messageWorker('${w.id}')">💬</button>`
-            : `<button class="btn btn-primary btn-sm" onclick="reactivateTemp('${w.id}')">Reactivate</button>`}
+            : w.status === 'active' ? `<button class="icon-btn" title="Archive (deactivate)" onclick="deactivateTemp('${w.id}')">✏️</button><button class="icon-btn" title="Message" onclick="messageWorker('${w.id}')">💬</button>`
+            : `<button class="btn btn-primary btn-sm" onclick="reactivateTemp('${w.id}')">Reactivate</button><button class="icon-btn" title="Delete permanently" onclick="deleteWorkerAction('${w.id}')">🗑</button>`}
         </td>
       </tr>`).join('')}</tbody></table>`
     : `<div class="empty">No workers match your filters.</div>`;
@@ -796,18 +859,93 @@ async function messageWorker(id) {
 }
 
 async function deactivateTemp(id) {
-  if (!confirm('Deactivate this worker? They will no longer be able to log in, but can be reactivated any time.')) return;
-  await api(`/manager/temps/${id}/deactivate`, { method: 'POST' });
-  toast('Worker deactivated'); loadTemps(); loadOverview();
+  if (!confirm('Archive this worker? They will no longer be able to log in, will be hidden from the active roster, and can be restored any time from the Archive tab.')) return;
+  await api(`/manager/temps/${id}/archive`, { method: 'POST' });
+  toast('Worker archived'); loadTemps(); loadOverview();
 }
 async function reactivateTemp(id) {
-  await api(`/manager/temps/${id}/reactivate`, { method: 'POST' });
-  toast('Worker reactivated'); loadTemps(); loadOverview();
+  await api(`/manager/temps/${id}/restore`, { method: 'POST' });
+  toast('Worker restored'); loadTemps(); loadOverview();
+}
+async function deleteWorkerAction(id) {
+  if (!confirm('Permanently delete this worker? This cannot be undone. If they have shift history, deletion will be blocked and they will stay archived instead.')) return;
+  try {
+    await api(`/manager/temps/${id}`, { method: 'DELETE' });
+    toast('Worker deleted'); loadTemps(); loadOverview();
+  } catch (e) { toast(e.message || 'Failed to delete worker', true); }
 }
 async function revokeInvite(id) {
   if (!confirm('Revoke this invite? The link will stop working.')) return;
   await api(`/manager/temps/invites/${id}/revoke`, { method: 'POST' });
   toast('Invite revoked'); loadTemps();
+}
+
+// ===== Unified Archive tab =====
+async function loadArchive() {
+  const search = document.getElementById('archiveSearch') ? document.getElementById('archiveSearch').value.trim() : '';
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const { clients, shifts, workers, escalations } = await api('/manager/archive?' + params.toString());
+
+  document.getElementById('archiveClientsTable').innerHTML = clients.length ? `
+    <table><thead><tr><th>Company</th><th>Archived</th><th></th></tr></thead>
+    <tbody>${clients.map((c) => `
+      <tr>
+        <td>${c.company_name}</td><td>${fmtDateTime(c.archived_at)}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="archiveRestore('client','${c.id}')">Restore</button>
+          <button class="btn btn-outline btn-sm" onclick="archiveDelete('client','${c.id}')">Delete</button>
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No archived clients.</div>`;
+
+  document.getElementById('archiveShiftsTable').innerHTML = shifts.length ? `
+    <table><thead><tr><th>Client</th><th>Job</th><th>Temp</th><th>Date</th><th>Archived</th><th></th></tr></thead>
+    <tbody>${shifts.map((s) => `
+      <tr>
+        <td>${s.company_name}</td><td>${s.job_title}</td><td>${s.temp_name || '—'}</td>
+        <td>${fmtDate(s.shift_date)}</td><td>${fmtDateTime(s.archived_at)}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="archiveRestore('shift','${s.id}')">Restore</button>
+          <button class="btn btn-outline btn-sm" onclick="archiveDelete('shift','${s.id}')">Delete</button>
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No archived shifts.</div>`;
+
+  document.getElementById('archiveWorkersTable').innerHTML = workers.length ? `
+    <table><thead><tr><th>Name</th><th>Email</th><th>Archived</th><th></th></tr></thead>
+    <tbody>${workers.map((w) => `
+      <tr>
+        <td>${w.full_name}</td><td>${w.email}</td><td>${fmtDateTime(w.archived_at)}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="archiveRestore('worker','${w.id}')">Restore</button>
+          <button class="btn btn-outline btn-sm" onclick="archiveDelete('worker','${w.id}')">Delete</button>
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No archived workers.</div>`;
+
+  document.getElementById('archiveEscalationsTable').innerHTML = escalations.length ? `
+    <table><thead><tr><th>Client</th><th>Trigger</th><th>Summary</th><th>Archived</th><th></th></tr></thead>
+    <tbody>${escalations.map((e) => `
+      <tr>
+        <td>${e.company_name || '—'}</td><td>${(e.triggered_by || '').replace(/_/g, ' ')}</td>
+        <td>${e.summary || ''}</td><td>${fmtDateTime(e.archived_at)}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="archiveRestore('escalation','${e.id}')">Restore</button>
+          <button class="btn btn-outline btn-sm" onclick="archiveDelete('escalation','${e.id}')">Delete</button>
+        </td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">No archived issues.</div>`;
+}
+
+const ARCHIVE_ROUTE = { client: 'clients', shift: 'shifts', worker: 'temps', escalation: 'escalations' };
+async function archiveRestore(kind, id) {
+  await api(`/manager/${ARCHIVE_ROUTE[kind]}/${id}/restore`, { method: 'POST' });
+  toast('Restored'); loadArchive();
+  if (kind === 'client') loadClients(); if (kind === 'shift') loadShifts(); if (kind === 'worker') loadTemps(); if (kind === 'escalation') { loadEscalations(); loadOverview(); }
+}
+async function archiveDelete(kind, id) {
+  if (!confirm('Permanently delete this record? This cannot be undone. If it has related history, deletion will be blocked and it will stay archived.')) return;
+  try {
+    await api(`/manager/${ARCHIVE_ROUTE[kind]}/${id}`, { method: 'DELETE' });
+    toast('Deleted permanently'); loadArchive();
+  } catch (e) { toast(e.message || 'Failed to delete', true); }
 }
 
 async function loadAnalytics() {

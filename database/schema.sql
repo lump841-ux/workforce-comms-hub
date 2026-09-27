@@ -37,7 +37,17 @@ CREATE TABLE IF NOT EXISTS client_orgs (
 );
 
 -- ============ USERS (all roles) ============
--- role: temp | agency_manager | agency_admin | client_hr | platform_admin
+-- role: temp | recruiter | agency_manager | agency_admin | owner | client_hr | platform_admin
+-- Phase 4 role model: 'owner' is the single founding user of an agency
+-- (set at agency-signup time, never assignable via invite); 'agency_admin'
+-- has full operational access plus team/offices management but cannot edit
+-- agency Settings or add/remove other admins/owners (owner-only); 'recruiter'
+-- is a scoped-down internal role focused on sourcing/managing the temp
+-- workforce (Workers tab + read-only Shifts), with no access to Clients,
+-- Replacements, Escalations, Analytics, Team, Offices, Settings, or Archive.
+-- No CHECK constraint enforces this list (SQLite ALTER TABLE can't add one
+-- retroactively without a rebuild); it's enforced entirely in the app layer
+-- via requireRole()/denyRoles() in middleware/auth.js and routes/manager.js.
 -- For client_hr users, agency_id/client_id are session-time conveniences that
 -- track the *currently selected* agency relationship (see client_org_agency_links);
 -- client_org_id is the durable identity. For temp/manager roles agency_id is

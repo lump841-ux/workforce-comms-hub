@@ -114,7 +114,7 @@ router.post('/raise-issue', (req, res) => {
   );
   run(`INSERT INTO conversation_participants (id, conversation_id, user_id) VALUES (?,?,?)`, [id('cvp'), convId, u.id]);
 
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [client.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [client.agency_id]);
   for (const m of managers) {
     run(`INSERT INTO conversation_participants (id, conversation_id, user_id) VALUES (?,?,?)`, [id('cvp'), convId, m.id]);
   }
@@ -177,7 +177,7 @@ router.post('/shifts/:id/confirm-arrival', (req, res) => {
   const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   run(`UPDATE shifts SET supervisor_confirmed_arrival_at = datetime('now'), supervisor_confirmed_arrival_by = ? WHERE id = ?`, [u.id, req.params.id]);
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'shift_reminder',
     title: `Arrival confirmed by supervisor`,
@@ -212,7 +212,7 @@ router.post('/shifts/:id/report-left-early', (req, res) => {
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   const { note } = req.body;
   run(`UPDATE shifts SET left_early_at = datetime('now'), left_early_by = ? WHERE id = ?`, [u.id, req.params.id]);
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'shift_reminder',
     title: `Worker left early`,
@@ -238,7 +238,7 @@ router.post('/shifts/:id/time-correction', (req, res) => {
      VALUES (?,?,?,?,?,?,?,?)`,
     [disputeId, shift.agency_id, req.params.id, category || 'other', u.id, clientClaimHours, clientClaimHours, clientClaim || null]
   );
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'message',
     title: `Time correction requested by supervisor`,

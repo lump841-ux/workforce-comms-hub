@@ -36,7 +36,7 @@ router.get('/shifts/:id/care-team', (req, res) => {
   const u = req.session.user;
   const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
-  const agencyContacts = all(`SELECT id, full_name, email, phone, role FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const agencyContacts = all(`SELECT id, full_name, email, phone, role FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = getSupervisorsForClient(shift.client_id).map((s) => ({ ...s, role: 'client_hr' }));
   res.json({ agencyContacts, supervisors });
 });
@@ -128,7 +128,7 @@ router.post('/shifts/:id/running-late', (req, res) => {
   // Running late reaches BOTH the agency and the assigned client supervisor —
   // the supervisor is the one standing at the site wondering where the
   // worker is, so they get this the same moment the agency does.
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = getSupervisorsForClient(shift.client_id);
   const body = `${shift.job_title} at ${shift.company_name}${minutesLate ? ` — about ${minutesLate} min late` : ''}${eta ? `, ETA ${eta}` : ''}${reason ? `: ${reason}` : ''}`;
   notifyMany([...managers.map((m) => m.id), ...supervisors.map((s) => s.id)], {
@@ -147,7 +147,7 @@ router.post('/shifts/:id/arrived', (req, res) => {
   const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   run(`UPDATE shifts SET arrived_at = datetime('now') WHERE id = ?`, [req.params.id]);
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = getSupervisorsForClient(shift.client_id);
   notifyMany([...managers.map((m) => m.id), ...supervisors.map((s) => s.id)], {
     type: 'shift_reminder',
@@ -170,7 +170,7 @@ router.post('/shifts/:id/emergency', (req, res) => {
   const { details } = req.body;
 
   const convId = id('cnv');
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = shift ? getSupervisorsForClient(shift.client_id) : [];
   run(
     `INSERT INTO conversations (id, agency_id, client_id, type, subject, shift_id, created_by, priority)
@@ -222,7 +222,7 @@ router.post('/shifts/:id/time-dispute', (req, res) => {
      VALUES (?,?,?,?,?,?,?,?)`,
     [disputeId, u.agency_id, req.params.id, category, u.id, reportedHours, workerClaim || null, photoDataUrl || null]
   );
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'message',
     title: `Time issue reported by ${u.full_name}`,
@@ -327,7 +327,7 @@ router.post('/issues', (req, res) => {
   const shift = shiftId ? get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [shiftId, u.id]) : null;
 
   const convId = id('cnv');
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   run(
     `INSERT INTO conversations (id, agency_id, client_id, type, subject, shift_id, created_by, priority)
      VALUES (?,?,?,?,?,?,?,?)`,

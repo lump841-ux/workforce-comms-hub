@@ -29,7 +29,7 @@ function findCandidates(shift, limit = 5) {
 }
 
 function managersFor(agencyId) {
-  return all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [agencyId]);
+  return all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [agencyId]);
 }
 
 // Any client_hr user currently pointed at this client site gets the client

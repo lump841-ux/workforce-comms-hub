@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { run, all, get } = require('../database/db');
 const { id } = require('../services/ids');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, denyRoles } = require('../middleware/auth');
 const { manualFlagNoShow, scanForNoShows } = require('../services/noshow');
 const { startReplacementSearch, findCandidates, selectReplacementCandidate, rejectReplacementRequest } = require('../services/replacement');
 const { acknowledgeEscalation, resolveEscalation } = require('../services/escalation');
@@ -13,7 +13,21 @@ const { logAudit } = require('../services/audit');
 const { buildShiftTimeline } = require('../services/timeline');
 
 const router = express.Router();
-router.use(requireRole('agency_manager', 'agency_admin'));
+router.use(requireRole('agency_manager', 'agency_admin', 'owner', 'recruiter'));
+
+// Phase 4 — 'recruiter' is a scoped-down internal role: full access to the
+// Workers (temps) roster and messaging, read-only on Shifts, and no access
+// at all to Clients, Replacements, Escalations, Analytics, Team, Offices,
+// Settings, or the Archive (which surfaces clients/shifts/escalations a
+// recruiter shouldn't be managing). These use Express's prefix-matching
+// router.use(path, mw), so each covers every sub-route under that path.
+router.use(['/clients', '/replacements', '/escalations', '/analytics', '/team', '/offices', '/settings', '/archive', '/time-disputes'], denyRoles('recruiter'));
+router.use('/shifts', (req, res, next) => {
+  if (req.session.user.role === 'recruiter' && req.method !== 'GET') {
+    return res.status(403).json({ error: 'Recruiters have read-only access to shifts' });
+  }
+  next();
+});
 
 // A shift has no single "is it late yet" column — status only flips to
 // no_show once the background scan (or a manual flag) catches it. For the
@@ -859,21 +873,37 @@ router.get('/attendance', (req, res) => {
   });
 });
 
-// ===== Team (internal agency_manager / agency_admin users) =====
+// ===== Team (internal owner / agency_admin / agency_manager / recruiter users) =====
+// Phase 4 — Owner vs agency_admin split:
+//   owner        — the founding user (set at signup, never assignable via invite).
+//                  Full access everywhere, including Settings and adding/removing admins.
+//   agency_admin — everything an owner can do operationally, but cannot edit agency
+//                  Settings and cannot add, remove, or otherwise touch another
+//                  admin or the owner (only the owner manages the admin roster).
+//   agency_manager / recruiter — invited by an owner or admin; agency_manager keeps
+//                  today's full operational access, recruiter is scoped to Workers
+//                  + read-only Shifts (enforced by the denyRoles/read-only middleware
+//                  registered above, right after the router-level requireRole gate).
+const ADMIN_TIER_ROLES = ['owner', 'agency_admin'];
 router.get('/team', (req, res) => {
   const agencyId = req.session.user.agency_id;
-  const rows = all(`SELECT id, full_name, email, phone, role, active, created_at FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin') ORDER BY full_name ASC`, [agencyId]);
+  const rows = all(`SELECT id, full_name, email, phone, role, active, created_at FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner','recruiter') ORDER BY full_name ASC`, [agencyId]);
   res.json({ team: rows });
 });
 
 router.post('/team/invite', (req, res) => {
   const u = req.session.user;
-  if (u.role !== 'agency_admin') return res.status(403).json({ error: 'Only an agency admin can add internal team members' });
+  if (!ADMIN_TIER_ROLES.includes(u.role)) return res.status(403).json({ error: 'Only an owner or agency admin can add internal team members' });
   const { fullName, email, role } = req.body;
   if (!fullName || !email) return res.status(400).json({ error: 'fullName and email are required' });
   const normalizedEmail = email.toLowerCase().trim();
   if (get('SELECT id FROM users WHERE email = ?', [normalizedEmail])) return res.status(409).json({ error: 'A user with that email already exists' });
-  const memberRole = role === 'agency_admin' ? 'agency_admin' : 'agency_manager';
+  // Ownership is never assignable via invite — there's exactly one owner per
+  // agency, set at signup. Only the owner can promote someone to agency_admin;
+  // an agency_admin can invite managers and recruiters but not other admins.
+  if (role === 'owner') return res.status(400).json({ error: 'Ownership cannot be assigned via invite' });
+  if (role === 'agency_admin' && u.role !== 'owner') return res.status(403).json({ error: 'Only the owner can add another admin' });
+  const memberRole = ['agency_admin', 'recruiter'].includes(role) ? role : 'agency_manager';
   const memberId = id('usr');
   const tempPassword = crypto.randomBytes(6).toString('hex');
   run(
@@ -886,10 +916,12 @@ router.post('/team/invite', (req, res) => {
 
 router.post('/team/:id/deactivate', (req, res) => {
   const u = req.session.user;
-  if (u.role !== 'agency_admin') return res.status(403).json({ error: 'Only an agency admin can deactivate team members' });
-  const member = get(`SELECT * FROM users WHERE id = ? AND agency_id = ? AND role IN ('agency_manager','agency_admin')`, [req.params.id, u.agency_id]);
+  if (!ADMIN_TIER_ROLES.includes(u.role)) return res.status(403).json({ error: 'Only an owner or agency admin can deactivate team members' });
+  const member = get(`SELECT * FROM users WHERE id = ? AND agency_id = ? AND role IN ('agency_manager','agency_admin','owner','recruiter')`, [req.params.id, u.agency_id]);
   if (!member) return res.status(404).json({ error: 'Team member not found' });
   if (member.id === u.id) return res.status(400).json({ error: 'You cannot deactivate your own account' });
+  if (member.role === 'owner') return res.status(400).json({ error: 'The agency owner cannot be deactivated' });
+  if (member.role === 'agency_admin' && u.role !== 'owner') return res.status(403).json({ error: 'Only the owner can deactivate another admin' });
   run(`UPDATE users SET active = 0 WHERE id = ?`, [member.id]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'team_member_deactivated', entityType: 'user', entityId: member.id });
   res.json({ ok: true });
@@ -928,7 +960,7 @@ router.get('/settings', (req, res) => {
 
 router.post('/settings', (req, res) => {
   const u = req.session.user;
-  if (u.role !== 'agency_admin') return res.status(403).json({ error: 'Only an agency admin can change agency settings' });
+  if (u.role !== 'owner') return res.status(403).json({ error: 'Only the agency owner can change agency settings' });
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   run(`UPDATE agencies SET name = ? WHERE id = ?`, [name.trim(), u.agency_id]);

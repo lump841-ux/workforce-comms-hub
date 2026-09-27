@@ -108,7 +108,7 @@ router.post('/conversations', (req, res) => {
 
   // Temps and client HR contacts don't pick recipients explicitly — route to agency managers by default.
   if ((!Array.isArray(participantIds) || participantIds.length === 0) && (u.role === 'temp' || u.role === 'client_hr')) {
-    participantIds = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [u.agency_id]).map((r) => r.id);
+    participantIds = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]).map((r) => r.id);
   }
   if (!Array.isArray(participantIds) || participantIds.length === 0) {
     return res.status(400).json({ error: 'At least one other participant is required' });

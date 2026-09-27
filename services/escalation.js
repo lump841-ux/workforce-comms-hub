@@ -38,7 +38,7 @@ function resolveRecipients({ agencyId, clientId, tier }) {
     return [...admins, ...supervisors];
   }
   if (tier === 2) {
-    return all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [agencyId]);
+    return all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [agencyId]);
   }
   return all(`SELECT id FROM users WHERE agency_id = ? AND role = 'agency_manager'`, [agencyId]);
 }

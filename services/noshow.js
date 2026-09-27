@@ -36,7 +36,7 @@ function flagShiftNoShow(shift) {
     [eventId, shift.agency_id, shift.id, GRACE_MINUTES]
   );
 
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'no_show',
     title: `No-show flagged: ${shift.job_title}`,

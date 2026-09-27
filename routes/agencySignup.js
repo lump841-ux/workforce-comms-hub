@@ -31,14 +31,17 @@ router.post('/agency-signup', (req, res) => {
   const agencyId = id('agy');
   run(`INSERT INTO agencies (id, name, slug) VALUES (?,?,?)`, [agencyId, agencyName, slug]);
 
+  // The founding user of a brand-new agency is its 'owner' — a single,
+  // non-invitable role with full permissions (Settings, adding/removing
+  // admins) that a later 'agency_admin' added via Team invite does not have.
   const userId = id('usr');
   const hash = bcrypt.hashSync(password, 10);
   run(
     `INSERT INTO users (id, agency_id, role, full_name, email, password_hash) VALUES (?,?,?,?,?,?)`,
-    [userId, agencyId, 'agency_admin', adminName, email.toLowerCase().trim(), hash]
+    [userId, agencyId, 'owner', adminName, email.toLowerCase().trim(), hash]
   );
 
-  req.session.user = { id: userId, role: 'agency_admin', full_name: adminName, email, agency_id: agencyId, client_id: null };
+  req.session.user = { id: userId, role: 'owner', full_name: adminName, email, agency_id: agencyId, client_id: null };
   logAudit({ agencyId, actorId: userId, action: 'agency_signup', entityType: 'agency', entityId: agencyId });
 
   res.json({ ok: true, agencySlug: slug, user: req.session.user });

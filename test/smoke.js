@@ -555,6 +555,89 @@ async function main() {
   const archiveOtherAgencyClient = await request(server, { method: 'POST', path: `/api/manager/clients/${clientId}/archive`, cookie: admin2Cookie });
   assert(archiveOtherAgencyClient.status === 404, 'a different agency cannot archive another agency\'s client');
 
+  // ===== Phase 4: role model expansion (owner / recruiter / agency_admin) =====
+
+  // The founding user from agency signup is 'owner', not 'agency_admin'.
+  const teamAsOwner = await request(server, { method: 'GET', path: '/api/manager/team', cookie: adminCookie });
+  const ownerRow = teamAsOwner.body.team.find((m) => m.email === `admin${stamp}@smoke.test`);
+  assert(ownerRow && ownerRow.role === 'owner', 'agency signup creates the founding user with role owner, not agency_admin');
+
+  // Owner invites a Recruiter, a Manager, and a second Admin.
+  const inviteRecruiter = await request(server, { method: 'POST', path: '/api/manager/team/invite', cookie: adminCookie, body: { fullName: 'Rachel Recruiter', email: `recruiter${stamp}@smoke.test`, role: 'recruiter' } });
+  assert(inviteRecruiter.status === 200 && inviteRecruiter.body.ok, 'owner invites a recruiter');
+  const recruiterLogin = await request(server, { method: 'POST', path: '/api/auth/login', body: { email: `recruiter${stamp}@smoke.test`, password: inviteRecruiter.body.tempPassword } });
+  const recruiterCookie = firstCookie(recruiterLogin.setCookie);
+  assert(recruiterLogin.status === 200, 'invited recruiter can log in with their temp password');
+
+  const inviteManager = await request(server, { method: 'POST', path: '/api/manager/team/invite', cookie: adminCookie, body: { fullName: 'Mona Manager', email: `manager${stamp}@smoke.test` } });
+  assert(inviteManager.status === 200 && inviteManager.body.ok, 'owner invites a manager');
+
+  const inviteAdminByOwner = await request(server, { method: 'POST', path: '/api/manager/team/invite', cookie: adminCookie, body: { fullName: 'Amy Admin', email: `admin2team${stamp}@smoke.test`, role: 'agency_admin' } });
+  assert(inviteAdminByOwner.status === 200 && inviteAdminByOwner.body.ok, 'owner promotes an invite to agency_admin');
+  const secondAdminLogin = await request(server, { method: 'POST', path: '/api/auth/login', body: { email: `admin2team${stamp}@smoke.test`, password: inviteAdminByOwner.body.tempPassword } });
+  const secondAdminCookie = firstCookie(secondAdminLogin.setCookie);
+  assert(secondAdminLogin.status === 200, 'invited agency_admin can log in with their temp password');
+
+  // A non-owner admin cannot invite another admin or assign ownership.
+  const nonOwnerInvitesAdmin = await request(server, { method: 'POST', path: '/api/manager/team/invite', cookie: secondAdminCookie, body: { fullName: 'Blocked Admin', email: `blockedadmin${stamp}@smoke.test`, role: 'agency_admin' } });
+  assert(nonOwnerInvitesAdmin.status === 403, 'a non-owner agency_admin cannot invite another admin');
+  const anyoneAssignsOwner = await request(server, { method: 'POST', path: '/api/manager/team/invite', cookie: adminCookie, body: { fullName: 'Nope Owner', email: `nopeowner${stamp}@smoke.test`, role: 'owner' } });
+  assert(anyoneAssignsOwner.status === 400, 'ownership can never be assigned via the team invite endpoint');
+
+  // Owner-only agency Settings.
+  const settingsAsAdmin = await request(server, { method: 'POST', path: '/api/manager/settings', cookie: secondAdminCookie, body: { name: 'Renamed By Admin' } });
+  assert(settingsAsAdmin.status === 403, 'a non-owner agency_admin cannot change agency settings');
+  const settingsAsOwner = await request(server, { method: 'POST', path: '/api/manager/settings', cookie: adminCookie, body: { name: 'Smoke Test Agency Renamed' } });
+  assert(settingsAsOwner.status === 200 && settingsAsOwner.body.ok, 'the owner can change agency settings');
+
+  // A third admin, invited by the owner, to test the "non-owner admin cannot deactivate another admin" rule.
+  const inviteThirdAdmin = await request(server, { method: 'POST', path: '/api/manager/team/invite', cookie: adminCookie, body: { fullName: 'Tina ThirdAdmin', email: `admin3team${stamp}@smoke.test`, role: 'agency_admin' } });
+  assert(inviteThirdAdmin.status === 200 && inviteThirdAdmin.body.ok, 'owner invites a third team member as agency_admin');
+
+  // Deactivation rules: owner can deactivate an admin; a non-owner admin cannot deactivate another admin; nobody can deactivate the owner.
+  const teamForIds = await request(server, { method: 'GET', path: '/api/manager/team', cookie: adminCookie });
+  const secondAdminId = teamForIds.body.team.find((m) => m.email === `admin2team${stamp}@smoke.test`).id;
+  const thirdAdminId = teamForIds.body.team.find((m) => m.email === `admin3team${stamp}@smoke.test`).id;
+  const ownerId = teamForIds.body.team.find((m) => m.email === `admin${stamp}@smoke.test`).id;
+  const nonAdminTierDeactivates = await request(server, { method: 'POST', path: `/api/manager/team/${secondAdminId}/deactivate`, cookie: recruiterCookie });
+  assert(nonAdminTierDeactivates.status === 403, 'a non-admin-tier role (recruiter) cannot deactivate anyone');
+  const nonOwnerDeactivatesAdmin = await request(server, { method: 'POST', path: `/api/manager/team/${thirdAdminId}/deactivate`, cookie: secondAdminCookie });
+  assert(nonOwnerDeactivatesAdmin.status === 403, 'a non-owner agency_admin cannot deactivate another admin');
+  const nobodyDeactivatesOwner = await request(server, { method: 'POST', path: `/api/manager/team/${ownerId}/deactivate`, cookie: secondAdminCookie });
+  assert(nobodyDeactivatesOwner.status === 400, 'the agency owner can never be deactivated, even by another admin');
+  const ownerDeactivatesAdmin = await request(server, { method: 'POST', path: `/api/manager/team/${secondAdminId}/deactivate`, cookie: adminCookie });
+  assert(ownerDeactivatesAdmin.status === 200 && ownerDeactivatesAdmin.body.ok, 'the owner can deactivate another admin');
+
+  // Recruiter scoping: full access to Workers + read-only Shifts, blocked everywhere else.
+  const recruiterTemps = await request(server, { method: 'GET', path: '/api/manager/temps', cookie: recruiterCookie });
+  assert(recruiterTemps.status === 200, 'recruiter has full access to the Workers (temps) list');
+  const recruiterRoster = await request(server, { method: 'GET', path: '/api/manager/temps/roster', cookie: recruiterCookie });
+  assert(recruiterRoster.status === 200, 'recruiter has access to the temps roster');
+  const recruiterShiftsRead = await request(server, { method: 'GET', path: '/api/manager/shifts', cookie: recruiterCookie });
+  assert(recruiterShiftsRead.status === 200, 'recruiter can read shifts');
+  const recruiterShiftsWrite = await request(server, { method: 'POST', path: '/api/manager/shifts', cookie: recruiterCookie, body: { clientId, jobTitle: 'Blocked Shift', shiftDate: '2030-01-01', startTime: '09:00', endTime: '17:00' } });
+  assert(recruiterShiftsWrite.status === 403, 'recruiter is blocked from creating shifts (read-only on Shifts)');
+
+  const recruiterBlockedRoutes = [
+    { method: 'GET', path: '/api/manager/clients' },
+    { method: 'GET', path: '/api/manager/replacements' },
+    { method: 'GET', path: '/api/manager/escalations' },
+    { method: 'GET', path: '/api/manager/analytics' },
+    { method: 'GET', path: '/api/manager/team' },
+    { method: 'GET', path: '/api/manager/offices' },
+    { method: 'GET', path: '/api/manager/settings' },
+    { method: 'GET', path: '/api/manager/archive' },
+    { method: 'GET', path: '/api/manager/time-disputes' },
+  ];
+  for (const route of recruiterBlockedRoutes) {
+    const res = await request(server, { method: route.method, path: route.path, cookie: recruiterCookie });
+    assert(res.status === 403, `recruiter is blocked from ${route.method} ${route.path}`);
+  }
+
+  // Internal-staff notification pool: owner still receives what agency_admin used to (e.g. surfaces as an internal-staff option for escalations/no-show routing).
+  const ownerStillInternalStaff = await request(server, { method: 'GET', path: '/api/manager/team', cookie: adminCookie });
+  assert(ownerStillInternalStaff.body.team.some((m) => m.role === 'owner'), 'owner role is present in the internal team roster used for notification/lookup pools');
+
   server.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -58,7 +58,7 @@
           </div>
         </div>
         <div>
-          <div class="sidebar-cta">
+          <div class="sidebar-cta" id="replacementCtaCard">
             <div class="cta-art"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="7" width="14" height="12" rx="1.5"/><path d="M17 10h3l1 3v6h-4"/><circle cx="7.5" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg></div>
             <h3>Keep Operations Focused</h3>
             <p>Twanova helps you manage replacements in under 3 minutes.</p>
@@ -76,7 +76,7 @@
     <div id="tab-shifts" style="display:none">
       <div class="page-head">
         <div><div class="page-title">Shifts</div><div class="page-sub">All scheduled, active, and completed shifts</div></div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px" id="shiftsWriteActions">
           <button class="btn btn-outline btn-sm" onclick="repostLastShift()">↻ Repost Last Shift</button>
           <button class="btn btn-primary btn-sm" onclick="openNewShiftModal()">+ New Shift</button>
         </div>
@@ -285,21 +285,50 @@ const JOB_TITLE_CHIPS = ['Warehouse Associate', 'Forklift Operator', 'Picker/Pac
 let SITES_LOADED = false, ATTENDANCE_LOADED = false, TEAM_LOADED = false, OFFICES_LOADED = false, SETTINGS_LOADED = false, DISPUTES_LOADED = false;
 let DISPUTES_CACHE = [];
 
+const TEAM_ROLE_DISPLAY = { owner: 'Owner', agency_admin: 'Admin', agency_manager: 'Manager', recruiter: 'Recruiter' };
+// Phase 4 — 'recruiter' is scoped to Workers/Shifts(read-only)/Messages/Overview
+// on the backend (see routes/manager.js); hide the rest of the nav for them too
+// so they're never one click away from a 403. Sites and Attendance aren't
+// backend-blocked for a recruiter (they're read-only, client-derived views),
+// but are hidden here anyway since sourcing/managing temps is their whole job.
+const RECRUITER_HIDDEN_TABS = ['clients', 'sites', 'attendance', 'replacements', 'escalations', 'analytics', 'team', 'offices', 'settings', 'archive'];
+
 async function boot() {
-  CURRENT_USER = await requireSession(['agency_manager', 'agency_admin']);
+  CURRENT_USER = await requireSession(['agency_manager', 'agency_admin', 'owner', 'recruiter']);
   if (!CURRENT_USER) return;
   document.getElementById('uName').textContent = CURRENT_USER.full_name;
-  document.getElementById('uRole').textContent = CURRENT_USER.role.replace('_', ' ');
+  document.getElementById('uRole').textContent = TEAM_ROLE_DISPLAY[CURRENT_USER.role] || CURRENT_USER.role;
   document.getElementById('avatar').textContent = initials(CURRENT_USER.full_name);
   document.querySelectorAll('.navlink').forEach((el) => el.addEventListener('click', () => { switchTab(el.dataset.tab); toggleMobileNav(false); }));
+
+  const isRecruiter = CURRENT_USER.role === 'recruiter';
+  if (isRecruiter) {
+    RECRUITER_HIDDEN_TABS.forEach((t) => {
+      const link = document.querySelector(`.navlink[data-tab="${t}"]`);
+      if (link) link.style.display = 'none';
+    });
+    // Shifts is read-only for recruiters on the backend — hide the write
+    // controls above the table rather than let them hit a 403 after the fact.
+    const writeActions = document.getElementById('shiftsWriteActions');
+    if (writeActions) writeActions.style.display = 'none';
+    // Overview's "Initiate Replacement" CTA deep-links into the
+    // Replacements tab, which is blocked for recruiters on the backend.
+    const replacementCta = document.getElementById('replacementCtaCard');
+    if (replacementCta) replacementCta.style.display = 'none';
+  }
 
   const hour = new Date().getHours();
   const daypart = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
   document.getElementById('greeting').textContent = `Good ${daypart}, ${CURRENT_USER.full_name.split(' ')[0]}!`;
   document.getElementById('greetingSub').textContent = `Here is your workforce activity overview for today, ${fmtDate(new Date().toISOString().slice(0,10))}.`;
 
-  await Promise.all([loadOverview(), loadQuickShiftSummary(), loadBriefing(), loadShifts(), loadReplacements(), loadEscalations(), loadConversations(), loadClients(), loadTemps(), loadAnalytics()]);
-  setInterval(() => { loadOverview(); loadQuickShiftSummary(); loadEscalations(); loadReplacements(); loadConversations(); }, 20000);
+  const loaders = [loadOverview(), loadQuickShiftSummary(), loadBriefing(), loadShifts(), loadConversations(), loadTemps()];
+  if (!isRecruiter) loaders.push(loadReplacements(), loadEscalations(), loadClients(), loadAnalytics());
+  await Promise.all(loaders);
+  setInterval(() => {
+    loadOverview(); loadQuickShiftSummary(); loadConversations();
+    if (!isRecruiter) { loadEscalations(); loadReplacements(); }
+  }, 20000);
 }
 
 const ALL_TABS = ['overview', 'shifts', 'replacements', 'escalations', 'messages', 'clients', 'temps', 'analytics', 'sites', 'attendance', 'team', 'offices', 'settings', 'archive'];
@@ -352,7 +381,7 @@ async function loadQuickShiftSummary() {
         <td><span class="pill pill-${s.displayStatus}">${DISPLAY_STATUS_LABEL[s.displayStatus] || s.displayStatus}</span></td>
         <td>
           <button class="icon-btn" title="View" onclick="switchTab('shifts')">👁</button>
-          ${['scheduled','confirmed'].includes(s.status) ? `<button class="icon-btn" title="More" onclick="flagNoShow('${s.id}')">⋯</button>` : ''}
+          ${CURRENT_USER.role !== 'recruiter' && ['scheduled','confirmed'].includes(s.status) ? `<button class="icon-btn" title="More" onclick="flagNoShow('${s.id}')">⋯</button>` : ''}
         </td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts scheduled for today.</div>`;
 }
@@ -397,10 +426,10 @@ async function loadShifts() {
         <td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td>
         <td>${pill(s.status)} ${s.onBreak ? '<span class="pill pill-onbreak">On Break</span>' : ''} ${s.needsAttention ? '<span class="pill pill-attention">Needs Attention</span>' : ''}</td>
         <td>
-          ${['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}
-          ${['scheduled', 'confirmed', 'in_progress'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="agencyInitiateReplace('${s.id}')">Replace</button>` : ''}
+          ${CURRENT_USER.role !== 'recruiter' && ['scheduled', 'confirmed'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="flagNoShow('${s.id}')">Flag no-show</button>` : ''}
+          ${CURRENT_USER.role !== 'recruiter' && ['scheduled', 'confirmed', 'in_progress'].includes(s.status) ? `<button class="btn btn-outline btn-sm" onclick="agencyInitiateReplace('${s.id}')">Replace</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="openManagerShiftTimeline('${s.id}')">Timeline</button>
-          <button class="icon-btn" title="Archive" onclick="archiveShiftAction('${s.id}')">🗄</button>
+          ${CURRENT_USER.role !== 'recruiter' ? `<button class="icon-btn" title="Archive" onclick="archiveShiftAction('${s.id}')">🗄</button>` : ''}
         </td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts yet. Create your first shift.</div>`;
 }
@@ -843,7 +872,7 @@ function renderWorkerProfile(w) {
       <div class="wp-metric-row"><span>Active Since</span><span class="wp-metric-val">${fmtDate(w.activeSince)}</span></div>
     </div>
     ${!w.isInvite ? `
-      <button class="btn btn-primary btn-block" onclick="openNewShiftModal('${w.id}')">Assign Shift</button>
+      ${CURRENT_USER.role !== 'recruiter' ? `<button class="btn btn-primary btn-block" onclick="openNewShiftModal('${w.id}')">Assign Shift</button>` : ''}
       <button class="btn btn-outline btn-block" onclick="messageWorker('${w.id}')">Send Direct Message</button>` : ''}`;
 }
 
@@ -994,17 +1023,24 @@ async function loadAttendance() {
       </tr>`).join('')}</tbody></table>` : `<div class="empty">No shifts in this range.</div>`;
 }
 
+const TEAM_ROLE_LABEL = { owner: 'Owner', agency_admin: 'Admin', agency_manager: 'Manager', recruiter: 'Recruiter' };
 async function loadTeam() {
   TEAM_LOADED = true;
   const { team } = await api('/manager/team');
   document.getElementById('teamTable').innerHTML = team.length ? `
     <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-    <tbody>${team.map((m) => `
+    <tbody>${team.map((m) => {
+      // Only the owner can deactivate another admin or the owner (owner can't
+      // be deactivated at all); admins can still deactivate managers/recruiters.
+      const canDeactivate = m.active && m.id !== CURRENT_USER.id && m.role !== 'owner' &&
+        (m.role !== 'agency_admin' || CURRENT_USER.role === 'owner');
+      return `
       <tr>
-        <td>${m.full_name}</td><td>${m.email}</td><td>${m.role === 'agency_admin' ? 'Admin' : 'Manager'}</td>
+        <td>${m.full_name}</td><td>${m.email}</td><td>${TEAM_ROLE_LABEL[m.role] || m.role}</td>
         <td>${m.active ? '<span class="pill pill-active">Active</span>' : '<span class="pill pill-inactive">Inactive</span>'}</td>
-        <td>${m.active && m.id !== CURRENT_USER.id ? `<button class="btn btn-outline btn-sm" onclick="deactivateTeamMember('${m.id}')">Deactivate</button>` : ''}</td>
-      </tr>`).join('')}</tbody></table>` : `<div class="empty">No team members yet.</div>`;
+        <td>${canDeactivate ? `<button class="btn btn-outline btn-sm" onclick="deactivateTeamMember('${m.id}')">Deactivate</button>` : ''}</td>
+      </tr>`;
+    }).join('')}</tbody></table>` : `<div class="empty">No team members yet.</div>`;
 }
 async function deactivateTeamMember(id) {
   if (!confirm('Deactivate this team member?')) return;
@@ -1012,13 +1048,16 @@ async function deactivateTeamMember(id) {
   catch (e) { toast(e.message, true); }
 }
 function openInviteTeamModal() {
+  // Only the owner can hand out the Admin role — an agency_admin can invite
+  // Managers and Recruiters, but promoting someone to Admin is owner-only.
+  const adminOption = CURRENT_USER.role === 'owner' ? `<option value="agency_admin">Admin</option>` : '';
   openModal(`
     <span class="modal-close" onclick="closeModal()">&times;</span>
     <h3>Add Team Member</h3>
     <label>Full name</label><input id="tm_fullName" />
     <label>Email</label><input id="tm_email" type="email" />
     <label>Role</label>
-    <select id="tm_role"><option value="agency_manager">Manager</option><option value="agency_admin">Admin</option></select>
+    <select id="tm_role"><option value="agency_manager">Manager</option><option value="recruiter">Recruiter</option>${adminOption}</select>
     <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="submitInviteTeam()">Add Team Member</button>
     <div id="teamInviteResult"></div>`);
 }

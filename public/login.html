@@ -68,7 +68,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       method: 'POST',
       body: { email: document.getElementById('email').value, password: document.getElementById('password').value }
     });
-    const dest = { temp: '/temp/dashboard.html', agency_manager: '/manager/dashboard.html', agency_admin: '/manager/dashboard.html', client_hr: '/client/dashboard.html' }[user.role] || '/login.html';
+    const dest = { temp: '/temp/dashboard.html', owner: '/manager/dashboard.html', recruiter: '/manager/dashboard.html', agency_manager: '/manager/dashboard.html', agency_admin: '/manager/dashboard.html', client_hr: '/client/dashboard.html' }[user.role] || '/login.html';
     window.location.href = dest;
   } catch (err) {
     msg.innerHTML = `<div class="err">${err.message}</div>`;

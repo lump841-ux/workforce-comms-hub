@@ -5,6 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Create your agency account — Twanova</title>
 <link rel="stylesheet" href="/style.css" />
+<style>
+:root{--tw-navy:#082b5c;--tw-blue:#0876ff;--tw-orange:#ff6a00}
+body{margin:0;background:#f5f9ff;color:#10233d;font-family:Inter,Arial,sans-serif}
+.mk-nav{background:#fff!important;border-bottom:1px solid #e5ecf5;display:flex;justify-content:space-between;align-items:center;padding:15px clamp(22px,5vw,82px);box-shadow:0 4px 18px #082b5c0b}
+.mk-links span{font-size:13px}
+.mk-actions a{font-weight:750;text-decoration:none}
+.tw-register{display:grid;grid-template-columns:minmax(0,1.06fr) minmax(390px,.94fr);min-height:690px;background:#062b53}
+.tw-scene{background:linear-gradient(90deg,#062952ed,#083464a8),url('https://images.pexels.com/photos/4483942/pexels-photo-4483942.jpeg?auto=compress&cs=tinysrgb&w=1600') center/cover;display:flex;flex-direction:column;justify-content:center;color:white;padding:clamp(32px,5vw,82px);position:relative;overflow:hidden}
+.tw-scene:after{content:"";position:absolute;width:340px;height:340px;border:1px solid #ffffff29;border-radius:50%;right:-120px;top:-160px;pointer-events:none}
+.tw-label{letter-spacing:3px;font-weight:800;font-size:12px;color:#ffd0a8}
+.tw-scene h1{font-size:clamp(36px,4vw,62px);line-height:1.06;letter-spacing:-1.8px;margin:19px 0}
+.tw-scene h1 span{color:#ff8b37}
+.tw-scene p{max-width:530px;font-size:17px;line-height:1.65;color:#e2eeff}
+.tw-points{display:grid;gap:14px;margin-top:28px}
+.tw-points div{padding:12px 16px;background:#ffffff16;border:1px solid #ffffff36;border-radius:12px;max-width:460px;font-weight:650}
+.tw-points b{color:#ffad73;margin-right:9px}
+.tw-form-side{background:linear-gradient(150deg,#f1f7ff,#fff 55%);display:flex;align-items:center;justify-content:center;padding:36px clamp(22px,4vw,70px)}
+.tw-card{width:100%;max-width:540px;background:#fff;border:1px solid #e4ecf5;border-radius:22px;padding:clamp(25px,3.3vw,43px);box-shadow:0 20px 60px #0a345b1b}
+.tw-card h2{font-size:32px;letter-spacing:-.8px;line-height:1.12;color:#082b5c;margin:10px 0}
+.tw-sub{color:#61738d;font-size:14px;line-height:1.6;margin:0 0 22px}
+.tw-card form{display:grid;gap:7px}
+.tw-card label{font-weight:750;font-size:13px;margin-top:7px;color:#233a58}
+.tw-card input{width:100%;box-sizing:border-box;height:48px;border:1px solid #ccdaeb;background:#f9fbff;border-radius:10px;padding:0 15px;font-size:15px;outline-color:#0876ff}
+.tw-card input:focus{border-color:#0876ff;box-shadow:0 0 0 3px #0876ff17}
+.tw-card button[type=submit]{width:100%;border:0;border-radius:11px;background:#ff6a00;color:white;padding:15px 18px;font-weight:850;font-size:15px;cursor:pointer;margin-top:13px}
+.tw-card button[type=submit]:hover{background:#ea6100}
+.tw-note{font-size:11px;color:#72829a;line-height:1.5;margin:11px 0}
+.tw-signin{text-align:center;border-top:1px solid #e6edf5;padding-top:18px;margin-top:16px;font-size:14px}
+.tw-signin a{color:#0876ff;font-weight:800}
+.tw-features{background:#fff;padding:57px max(22px,6vw)}
+.tw-features h2{text-align:center;font-size:29px;color:#082b5c}
+.tw-features .mk-sub2{text-align:center}
+.tw-footer{text-align:center;background:#052952;color:#b9d0ea;padding:23px}
+@media(max-width:860px){.tw-register{grid-template-columns:1fr}.tw-scene{min-height:300px;padding:38px 26px}.tw-scene h1{font-size:39px}.tw-scene p{font-size:15px}.tw-form-side{padding:25px 15px 38px}.mk-links{display:none!important}}
+</style>
 </head>
 <body>
 <div class="mk-nav">
@@ -17,29 +52,29 @@
   </div>
 </div>
 
-<div class="mk-hero">
-  <div>
-    <h1>Create Your Twanova Agency Account</h1>
-    <p class="mk-sub">Join workforce providers coordinating seamlessly. Deploy verified professionals, keep an attendance audit trail, and handle emergency standby in real-time.</p>
-    <form id="f">
-      <label>Agency name</label>
-      <input id="agencyName" required placeholder="e.g. Metro Staffing Solutions" />
-      <label>Full Name</label>
-      <input id="adminName" required placeholder="e.g. Sarah Jenkins" />
-      <label>Work Email Address</label>
-      <input id="email" type="email" required placeholder="e.g. sarah.jenkins@agency.com" />
-      <label>Password</label>
-      <input id="password" type="password" required minlength="6" placeholder="At least 6 characters" />
-      <button class="btn btn-primary btn-block" style="margin-top:20px" type="submit">Create Your Agency Account</button>
-      <div class="mk-agree">By clicking above, you agree to Twanova's Terms &amp; Conditions and privacy rules.</div>
-      <div id="msg"></div>
-    </form>
-    <div class="foot-link">Already have an account? <a href="/login.html">Sign in</a></div>
-  </div>
-  <div></div>
-</div>
+<main class="tw-register">
+ <section class="tw-scene" aria-label="Twanova workforce professionals">
+  <div class="tw-label">TWANOVA WORKFORCE COMMUNICATIONS HUB</div>
+  <h1>Everyone Connected.<br><span>Every Shift on Track.</span></h1>
+  <p>Bring your agency, clients, and temporary workers together. Give your team a simpler way to manage shifts, attendance, and communication—all in one place.</p>
+  <div class="tw-points"><div><b>✓</b> Agency, client & worker portals</div><div><b>✓</b> Shift status, messaging & photo proof</div><div><b>✓</b> Interactive Guided Tours in every role</div></div>
+ </section>
+ <section class="tw-form-side"><div class="tw-card">
+ <div class="tw-label" style="color:#d35b0b">GET STARTED WITH TWANOVA</div>
+ <h2>Create your agency account</h2><p class="tw-sub">Set up your agency administrator login. You'll be able to invite workers and client supervisors from your dashboard.</p>
+ <form id="f">
+  <label for="agencyName">Agency name</label><input id="agencyName" name="agencyName" required autocomplete="organization" placeholder="e.g. Metro Staffing Solutions" />
+  <label for="adminName">Your full name</label><input id="adminName" name="adminName" required autocomplete="name" placeholder="e.g. Sarah Jenkins" />
+  <label for="email">Work email address</label><input id="email" name="email" type="email" autocomplete="email" required placeholder="e.g. sarah@agency.com" />
+  <label for="password">Create a password</label><input id="password" name="password" type="password" autocomplete="new-password" required minlength="6" placeholder="At least 6 characters" />
+  <button type="submit">Create My Agency Account →</button>
+  <div class="tw-note">By continuing, you agree to Twanova's applicable terms and privacy policy. This creates an agency account, not a worker or client account.</div><div id="msg" role="status" aria-live="polite"></div>
+ </form>
+ <div class="tw-signin">Already have an account? <a href="/login.html">Sign in here</a></div>
+ </div></section>
+</main>
 
-<div class="mk-features">
+<div class="mk-features tw-features">
   <h2>Everything You Need to Get Started</h2>
   <div class="mk-sub2">Manage your shifts, communications, and workforce automatically.</div>
   <div class="mk-feature-grid">
@@ -61,7 +96,7 @@
   </div>
 </div>
 
-<div class="mk-footer">
+<div class="mk-footer tw-footer">
   © 2026 Twanova Tech. All rights reserved.
 </div>
 

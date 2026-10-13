@@ -335,7 +335,8 @@ const server = Bun.serve({
        return Response.json(m,{status:201});
      }catch(e){return Response.json({error:"Invalid message"},{status:400});}
    }
-   return new Response(u.pathname==="/practice"?twanovaPracticeMode():render(u.pathname),{headers:{"content-type":"text/html; charset=utf-8"}});
+   if(u.pathname==="/practice" || u.pathname==="/practice/") return new Response(await Bun.file("./practice.html").text(),{headers:{"content-type":"text/html; charset=utf-8"}});
+   return new Response(render(u.pathname),{headers:{"content-type":"text/html; charset=utf-8"}});
  }
 });
 console.log("Twanova prototype listening on", server.port);

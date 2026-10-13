@@ -4,25 +4,31 @@
 </style></head><body><header><a href="/">← Back to Twanova homepage</a><h1>Explore Twanova — Practice Mode</h1><div>Agency ⇄ Worker ⇄ Client Supervisor</div></header><main><div class="notice"><b>TRAINING ONLY — NOT LIVE.</b> Everything here is fictional and stays in this browser tab. No real shift, message, alert, account, or attendance record is created.</div>
 <div class="tabs"><button id="agency" onclick="role('agency')">Agency Manager</button><button id="worker" onclick="role('worker')">Temporary Worker</button><button id="client" onclick="role('client')">Client Supervisor</button><button onclick="resetDemo()" style="background:#627286">Reset practice</button></div><p style="font-size:16px;font-weight:700">Choose a role above, then use the buttons under “Try an action.” Changes show up across all three dashboards.</p><section id="screen" aria-live="polite"></section></main>
 <script>
-const initial=()=>({worker:'Maria Lopez',client:'Summit Logistics',site:'Warehouse A',shift:'8:00 AM – 4:00 PM',status:'Scheduled',late:0,replacement:false,approved:false,feed:[{who:'Agency',text:'Maria is assigned to the 8 AM shift.'}]});
-let state=initial(),current='agency';
-function escapeText(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function log(who,text){state.feed.unshift({who,text});render()}
-function role(r){current=r;render();document.getElementById("screen").scrollIntoView({behavior:"smooth",block:"start"})}
-function resetDemo(){state=initial();render()}
-function action(name){
-if(name==='late'){state.late=20;state.status='Running 20 minutes late';log('Worker','Maria reported a 20-minute delay. Agency and client can see the update.')}
-if(name==='arrive'){state.status='Arrived';log('Worker','Maria checked in at the job site.')}
-if(name==='replace'){state.replacement=true;log('Agency','Replacement requested for Maria. Client approval needed.')}
-if(name==='approve'){state.approved=true;state.replacement=false;log('Client','Client supervisor approved a replacement request.')}
-if(name==='message'){let e=document.querySelector('#msg'),t=(e?.value||'').trim().slice(0,220);if(t)log(current==='agency'?'Agency':current==='worker'?'Worker':'Client',t);}
+const fresh=()=>({status:"Scheduled",replacement:false,approved:false,feed:[["Agency","Maria Lopez assigned to the 8 AM shift."]]});
+let demo=fresh(),roleName="agency";
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+const roleTitles={agency:"Agency Manager",worker:"Temporary Worker",client:"Client Supervisor"};
+function show(){
+  document.querySelectorAll("[data-role]").forEach(b=>b.classList.toggle("active",b.dataset.role===roleName));
+  const actions=roleName==="agency"?'<button data-action="replace">Request a replacement</button><p>Client approval will be requested.</p>':roleName==="worker"?'<button data-action="late">Running 20 minutes late</button> <button data-action="arrive">I have arrived</button> <button data-action="break">Start break</button> <button data-action="back">Back from break</button> <button data-action="out">Clock out</button>':'<button data-action="approve" '+(demo.replacement?'':'disabled')+'>Approve replacement</button><p>'+(demo.replacement?'A replacement is waiting for your approval.':'No request is awaiting approval.')+'</p>';
+  document.getElementById("screen").innerHTML='<h2>'+roleTitles[roleName]+' Dashboard <span class="badge">INTERACTIVE DEMO</span></h2><div class="grid"><div class="card"><h3>Today\'s sample shift</h3><p><b>Worker:</b> Maria Lopez</p><p><b>Client:</b> Summit Logistics</p><p><b>Site:</b> Warehouse A</p><p><b>Time:</b> 8 AM – 4 PM</p><p><b>Attendance:</b> '+escapeHtml(demo.status)+'</p><p><b>Replacement:</b> '+(demo.approved?'Approved':demo.replacement?'Awaiting approval':'None')+'</p></div><div class="card"><h3>Try an action</h3>'+actions+'</div><div class="card"><h3>Send a message</h3><label for="msg">Sample message</label><input id="msg" maxlength="220" placeholder="Type your message"><p><button data-action="message">Send message</button></p></div></div><div class="card" style="margin-top:16px"><h3>Shared activity — updates instantly</h3><div id="activity">'+demo.feed.map(([who,msg])=>'<div class="feed"><b>'+escapeHtml(who)+':</b> '+escapeHtml(msg)+'</div>').join("")+'</div></div><p class="safe">Training only. No live accounts or workers are changed.</p>';
 }
-function feed(){return state.feed.map(m=>'<div class="feed"><b>'+escapeText(m.who)+':</b> '+escapeText(m.text)+'</div>').join('')}
-function render(){
-document.querySelectorAll('.tabs button[id]').forEach(b=>b.classList.toggle('active',b.id===current));
-let controls=current==='agency'?'<button onclick="action(\'replace\')">Request replacement</button><p class="sub">Practice coordinating a backup worker. The client will see the request.</p>':current==='worker'?'<button onclick="action(\'late\')">I am running 20 minutes late</button> <button onclick="action(\'arrive\')">I have arrived</button><p class="sub">Practice updating your arrival status.</p>':'<button onclick="action(\'approve\')" '+(!state.replacement?'disabled style="background:#9bafc5"':'')+'>Approve replacement</button><p class="sub">'+(state.replacement?'The agency has requested approval for a replacement.':'No replacement is currently pending.')+'</p>';
-const title=current==='agency'?'Agency Manager':current==='worker'?'Temporary Worker':'Client Supervisor';
-document.getElementById('screen').innerHTML='<h2>'+title+' Dashboard <span class="badge">SAMPLE DATA</span></h2><div class="grid"><div class="card"><h3>Sample Shift</h3><p><b>Worker:</b> '+state.worker+'</p><p><b>Client:</b> '+state.client+'</p><p><b>Site:</b> '+state.site+'</p><p><b>Hours:</b> '+state.shift+'</p><p><b>Attendance:</b> '+escapeText(state.status)+'</p><p><b>Replacement:</b> '+(state.approved?'Approved':state.replacement?'Pending client approval':'None')+'</p></div><div class="card"><h3>Try an action</h3>'+controls+'</div><div class="card"><h3>Send a practice message</h3><label for="msg">Shift message</label><input id="msg" maxlength="220" placeholder="Type a practice message"><p><button onclick="action(\'message\')">Send practice message</button></p><p class="sub">Appears only in this sample activity feed.</p></div></div><div class="card" style="margin-top:16px"><h3>Shared communication trail</h3><p class="sub">Switch between roles above to see how the same sample events appear to everyone.</p>'+feed()+'</div><p class="safe">✓ All changes remain inside this page. Closing or reloading resets the scenario.</p>';
-}
-render();
+function record(who,message){demo.feed.unshift([who,message]);show();}
+document.addEventListener("click",ev=>{
+ const r=ev.target.closest("[data-role]");
+ if(r){roleName=r.dataset.role;show();return;}
+ const b=ev.target.closest("[data-action]");
+ if(!b)return;
+ const a=b.dataset.action;
+ if(a==="reset"){demo=fresh();roleName="agency";show();return;}
+ if(a==="replace"){demo.replacement=true;demo.approved=false;record("Agency","Requested a replacement. Client supervisor can approve.");}
+ else if(a==="approve"&&demo.replacement){demo.approved=true;demo.replacement=false;record("Client","Replacement approved.");}
+ else if(a==="late"){demo.status="Running 20 minutes late";record("Worker","Reported a 20-minute delay.");}
+ else if(a==="arrive"){demo.status="Arrived";record("Worker","Checked in at job site.");}
+ else if(a==="break"){demo.status="On break";record("Worker","Started break.");}
+ else if(a==="back"){demo.status="Working";record("Worker","Returned from break.");}
+ else if(a==="out"){demo.status="Shift completed";record("Worker","Clocked out.");}
+ else if(a==="message"){const t=document.getElementById("msg")?.value.trim();if(t)record(roleTitles[roleName],t);else alert("Type a message first.");}
+});
+show();
 </script></body></html>

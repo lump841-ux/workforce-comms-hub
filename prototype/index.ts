@@ -335,6 +335,7 @@ const server = Bun.serve({
        return Response.json(m,{status:201});
      }catch(e){return Response.json({error:"Invalid message"},{status:400});}
    }
+   if(u.pathname==="/pricing" || u.pathname==="/pricing/") return new Response(await Bun.file("./pricing.html").text(),{headers:{"content-type":"text/html; charset=utf-8"}});
    if(u.pathname==="/practice" || u.pathname==="/practice/") return new Response(await Bun.file("./practice.html").text(),{headers:{"content-type":"text/html; charset=utf-8"}});
    if(u.pathname==="/checkout-preview" || u.pathname==="/checkout-preview/") return new Response(await Bun.file("./checkout-preview.html").text(),{headers:{"content-type":"text/html; charset=utf-8"}});
    return new Response(render(u.pathname),{headers:{"content-type":"text/html; charset=utf-8"}});

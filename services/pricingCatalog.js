@@ -31,7 +31,7 @@ const PLANS = Object.freeze({
     "code": "tier_4",
     "minActiveWorkers": 1001,
     "maxActiveWorkers": 2000,
-    "flexMonthlyCents": 149900,
+    "flexMonthlyCents": 199900,
     "sixMonthMonthlyCents": 179900,
     "twelveMonthMonthlyCents": 159900
   },

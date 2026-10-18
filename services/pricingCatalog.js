@@ -1,7 +1,7 @@
 'use strict';
 // October 15 approved agency size / contract price schedule.
 // Quoted USD cents, per month; contract duration in months.
-const SETUP_FEE_CENTS = 199900;
+const SETUP_FEE_CENTS = 149900;
 const PLANS = Object.freeze({
   "tier_1": {
     "code": "tier_1",
@@ -31,7 +31,7 @@ const PLANS = Object.freeze({
     "code": "tier_4",
     "minActiveWorkers": 1001,
     "maxActiveWorkers": 2000,
-    "flexMonthlyCents": 199900,
+    "flexMonthlyCents": 149900,
     "sixMonthMonthlyCents": 179900,
     "twelveMonthMonthlyCents": 159900
   },

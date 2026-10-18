@@ -384,3 +384,10 @@ CREATE TABLE IF NOT EXISTS agency_billing (
   current_period_end TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Stripe test-webhook event deduplication and replay safety.
+CREATE TABLE IF NOT EXISTS billing_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  received_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

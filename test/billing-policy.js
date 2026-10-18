@@ -1,0 +1,14 @@
+'use strict';
+const assert = require('node:assert/strict');
+const p = require('../services/billingPolicy');
+assert.equal(p.isFreeAccessRole('temp'), true);
+assert.equal(p.isFreeAccessRole('client_hr'), true);
+assert.equal(p.isFreeAccessRole('owner'), false);
+assert.equal(p.canManageBilling({ role: 'temp', agency_id: 'a1' }), false);
+assert.equal(p.canManageBilling({ role: 'client_hr', agency_id: 'a1' }), false);
+assert.equal(p.canManageBilling({ role: 'owner', agency_id: 'a1' }), true);
+assert.equal(p.canManageBilling({ role: 'agency_admin', agency_id: 'a1' }), true);
+assert.equal(p.canManageBilling({ role: 'agency_admin', agency_id: null }), false);
+assert.equal(p.normalizeBillingStatus('active'), 'active');
+assert.equal(p.normalizeBillingStatus('anything-else'), 'not_configured');
+console.log('Billing policy assertions passed (no Stripe calls).');

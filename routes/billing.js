@@ -3,11 +3,17 @@ const express = require('express');
 const { get } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const { canManageBilling, normalizeBillingStatus } = require('../services/billingPolicy');
+const { publicCatalog } = require('../services/pricingCatalog');
 const router = express.Router();
 router.use(requireAuth);
 
 // Read-only setup/status. Stripe Checkout, webhooks and live subscriptions are
 // intentionally disabled until plan prices and test-mode integration are approved.
+router.get('/plans', (req, res) => {
+  if (!canManageBilling(req.session.user)) return res.status(403).json({ error: 'Agency administrator access required' });
+  res.json({ billing_model: 'agency_only', plans: publicCatalog(), checkout_enabled: false });
+});
+
 router.get('/status', (req, res) => {
   const user = req.session.user;
   if (!canManageBilling(user)) return res.status(403).json({ error: 'Agency administrator access required' });

@@ -16,7 +16,7 @@ console.log('Billing policy assertions passed (no Stripe calls).');
 
 const { PLANS, publicCatalog, SETUP_FEE_CENTS } = require('../services/pricingCatalog');
 assert.equal(Object.keys(PLANS).length,6);
-assert.equal(SETUP_FEE_CENTS,199900);
+assert.equal(SETUP_FEE_CENTS,149900);
 assert.equal(PLANS.tier_1.flexMonthlyCents,34900);
 assert.equal(PLANS.tier_1.twelveMonthMonthlyCents,24900);
 assert.equal(PLANS.tier_6.flexMonthlyCents,449900);

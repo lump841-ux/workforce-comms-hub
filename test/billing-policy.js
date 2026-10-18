@@ -12,3 +12,10 @@ assert.equal(p.canManageBilling({ role: 'agency_admin', agency_id: null }), fals
 assert.equal(p.normalizeBillingStatus('active'), 'active');
 assert.equal(p.normalizeBillingStatus('anything-else'), 'not_configured');
 console.log('Billing policy assertions passed (no Stripe calls).');
+
+const { PLANS, publicCatalog } = require('../services/pricingCatalog');
+assert.equal(PLANS.starter.monthlyCents, 14900);
+assert.equal(PLANS.growth.activeWorkers, 100);
+assert.equal(PLANS.professional.monthlyCents, 79900);
+assert.equal(PLANS.enterprise.monthlyCents, null);
+assert.ok(publicCatalog().every(p => p.checkoutEnabled === false));

@@ -41,9 +41,8 @@ router.post('/test-checkout', async (req, res) => {
     const origin = process.env.BILLING_TEST_RETURN_ORIGIN || '';
     if (!/^https:\/\/[^/]+$/.test(origin)) return res.status(503).json({ error: 'Test return origin is not configured' });
     const stripe = sdk();
-    const row = get('SELECT stripe_customer_id FROM agency_billing WHERE agency_id = ?', [agencyId]);
-    // Never reuse or mutate LIVE customer IDs in test mode.
-    const customer = row && row.stripe_customer_id && row.stripe_customer_id.startsWith('cus_') ? row.stripe_customer_id : null;
+    const row = get('SELECT stripe_subscription_id, subscription_status FROM agency_billing WHERE agency_id = ?', [agencyId]);
+    if (row?.stripe_subscription_id) return res.status(409).json({ error: 'An agency subscription already exists. Contact support to change plans.' });
     const params = {
       mode: 'subscription',
       line_items: [{ price, quantity: 1 }],
@@ -53,8 +52,7 @@ router.post('/test-checkout', async (req, res) => {
       success_url: origin + '/manager/billing-preview.html?test_checkout=success',
       cancel_url: origin + '/manager/billing-preview.html?test_checkout=cancel'
     };
-    if (customer) params.customer = customer;
-    else params.customer_email = req.session.user.email;
+    params.customer_email = req.session.user.email;
     const checkout = await stripe.checkout.sessions.create(params,{ idempotencyKey: 'test-checkout-'+agencyId+'-'+req.body.plan+'-'+Date.now() });
     res.json({ url: checkout.url, test_mode: true });
   } catch (err) {

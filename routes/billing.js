@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { canManageBilling, normalizeBillingStatus } = require('../services/billingPolicy');
 const { publicCatalog } = require('../services/pricingCatalog');
 const { quote } = require('../services/billingQuote');
+const { orderSummary } = require('../services/agencyOrderSummary');
 const { config, sdk, allowedPrice } = require('../services/stripeTest');
 const router = express.Router();
 router.use(requireAuth);
@@ -20,6 +21,14 @@ router.get('/quote', (req, res) => {
   if (!canManageBilling(req.session.user)) return res.status(403).json({ error: 'Agency administrator access required' });
   try { return res.json(quote(req.query.tier, req.query.term)); }
   catch (_) { return res.status(400).json({ error: 'Invalid tier or contract term' }); }
+});
+
+// Server-generated preview for a future verified e-signature provider.
+// Deliberately never accepts signer data or collects legally binding consent.
+router.get('/order-summary', (req, res) => {
+  if (!canManageBilling(req.session.user)) return res.status(403).json({ error: 'Agency administrator access required' });
+  try { return res.json(orderSummary(req.query.tier, req.query.term)); }
+  catch (_) { return res.status(400).json({ error: 'Invalid tier or agreement selection' }); }
 });
 
 router.get('/status', (req, res) => {

@@ -16,6 +16,7 @@ const tempRoutes = require('./routes/temp');
 const managerRoutes = require('./routes/manager');
 const clientRoutes = require('./routes/client');
 const billingRoutes = require('./routes/billing');
+const billingWebhookRoutes = require('./routes/billingWebhook');
 
 const app = express();
 const PORT = process.env.PORT || 4400;
@@ -28,6 +29,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 
+app.use('/api/billing/test-webhook', billingWebhookRoutes);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(

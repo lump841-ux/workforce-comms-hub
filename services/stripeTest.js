@@ -11,9 +11,10 @@ function config() {
   const key = process.env.STRIPE_TEST_SECRET_KEY || '';
   const webhookSecret = process.env.STRIPE_TEST_WEBHOOK_SECRET || '';
   const prices = Object.fromEntries(Object.entries(ids).map(([plan,env])=>[plan,process.env[env]||'']));
+  // PAUSED: the former three-plan checkout mapping is obsolete. Rebuild all six tiers x three durations before enabling test checkout.
   // Strictly require a TEST secret, TEST price IDs and a webhook signing secret.
   // This module will never connect to live Stripe, even if a live key exists elsewhere.
-  const enabled = process.env.ENABLE_STRIPE_TEST_CHECKOUT === 'true' &&
+  const enabled = false && process.env.ENABLE_STRIPE_TEST_CHECKOUT === 'true' &&
     key.startsWith('sk_test_') && webhookSecret.startsWith('whsec_') &&
     Object.values(prices).every(v=>v.startsWith('price_'));
   return { enabled, key, webhookSecret, prices };

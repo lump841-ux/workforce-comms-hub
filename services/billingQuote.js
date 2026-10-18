@@ -12,7 +12,8 @@ function quote(tier, term) {
   return {
     tier, term, minActiveWorkers:plan.minActiveWorkers,maxActiveWorkers:plan.maxActiveWorkers,
     monthlyCents,setupFeeCents:SETUP_FEE_CENTS,
-    firstInvoiceCents:monthlyCents+SETUP_FEE_CENTS,
+    firstInvoiceCents:SETUP_FEE_CENTS,
+    monthlyBillingStarts:'one_calendar_month_after_activation',
     commitmentMonths:option.months,
     minimumTermTotalCents:option.months===null?null:SETUP_FEE_CENTS+monthlyCents*option.months,
     currency:'usd', quoteOnly:true, checkoutEnabled:false

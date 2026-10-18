@@ -26,9 +26,10 @@ assert.equal(PLANS.tier_6.twelveMonthMonthlyCents,349900);
 assert.ok(publicCatalog().every(p=>p.checkoutEnabled===false));
 
 const {quote}=require('../services/billingQuote');
-assert.equal(quote('tier_1','flex').firstInvoiceCents,184800);
+assert.equal(quote('tier_1','flex').firstInvoiceCents,149900);
 assert.equal(quote('tier_1','twelve_month').minimumTermTotalCents,448700);
 assert.equal(quote('tier_4','flex').monthlyCents,199900);
 assert.equal(quote('tier_6','six_month').monthlyCents,399900);
 assert.equal(quote('tier_1','flex').checkoutEnabled,false);
+assert.equal(quote('tier_1','flex').monthlyBillingStarts,'one_calendar_month_after_activation');
 assert.throws(()=>quote('invalid','flex'));

@@ -6,13 +6,15 @@
   "type": "commonjs",
   "scripts": {
     "start": "node --experimental-sqlite server.js",
-    "test": "node --experimental-sqlite test/smoke.js"
+    "test": "node --experimental-sqlite test/smoke.js",
+    "test:billing": "node test/billing-policy.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "express-session": "^1.18.0",
     "bcryptjs": "^2.4.3",
     "uuid": "^9.0.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "stripe": "^19.0.0"
   }
 }

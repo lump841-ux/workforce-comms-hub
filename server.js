@@ -15,6 +15,7 @@ const messageRoutes = require('./routes/messages');
 const tempRoutes = require('./routes/temp');
 const managerRoutes = require('./routes/manager');
 const clientRoutes = require('./routes/client');
+const billingRoutes = require('./routes/billing');
 
 const app = express();
 const PORT = process.env.PORT || 4400;
@@ -44,6 +45,7 @@ app.use('/api', messageRoutes);
 app.use('/api/temp', tempRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/client', clientRoutes);
+app.use('/api/billing', billingRoutes);
 
 app.use(express.static(path.join(__dirname, 'public')));
 

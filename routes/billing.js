@@ -4,6 +4,7 @@ const { get } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const { canManageBilling, normalizeBillingStatus } = require('../services/billingPolicy');
 const { publicCatalog } = require('../services/pricingCatalog');
+const { quote } = require('../services/billingQuote');
 const { config, sdk, allowedPrice } = require('../services/stripeTest');
 const router = express.Router();
 router.use(requireAuth);
@@ -13,6 +14,12 @@ router.use(requireAuth);
 router.get('/plans', (req, res) => {
   if (!canManageBilling(req.session.user)) return res.status(403).json({ error: 'Agency administrator access required' });
   res.json({ billing_model: 'agency_only', plans: publicCatalog(), checkout_enabled: config().enabled });
+});
+
+router.get('/quote', (req, res) => {
+  if (!canManageBilling(req.session.user)) return res.status(403).json({ error: 'Agency administrator access required' });
+  try { return res.json(quote(req.query.tier, req.query.term)); }
+  catch (_) { return res.status(400).json({ error: 'Invalid tier or contract term' }); }
 });
 
 router.get('/status', (req, res) => {

@@ -370,3 +370,17 @@ CREATE INDEX IF NOT EXISTS idx_col_org ON client_org_agency_links(client_org_id)
 CREATE INDEX IF NOT EXISTS idx_col_agency ON client_org_agency_links(agency_id, status);
 CREATE INDEX IF NOT EXISTS idx_temp_invites_token ON temp_invites(token);
 CREATE INDEX IF NOT EXISTS idx_temp_invites_agency ON temp_invites(agency_id, status);
+
+
+-- Agency-only billing records. Stripe identifiers must never be client-supplied.
+-- No automatic charges occur from this table.
+CREATE TABLE IF NOT EXISTS agency_billing (
+  agency_id TEXT PRIMARY KEY REFERENCES agencies(id),
+  stripe_customer_id TEXT UNIQUE,
+  stripe_subscription_id TEXT UNIQUE,
+  plan_code TEXT,
+  subscription_status TEXT NOT NULL DEFAULT 'not_configured'
+    CHECK (subscription_status IN ('not_configured','trialing','active','past_due','canceled','unpaid','paused')),
+  current_period_end TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

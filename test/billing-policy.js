@@ -13,9 +13,13 @@ assert.equal(p.normalizeBillingStatus('active'), 'active');
 assert.equal(p.normalizeBillingStatus('anything-else'), 'not_configured');
 console.log('Billing policy assertions passed (no Stripe calls).');
 
-const { PLANS, publicCatalog } = require('../services/pricingCatalog');
-assert.equal(PLANS.starter.monthlyCents, 14900);
-assert.equal(PLANS.growth.activeWorkers, 100);
-assert.equal(PLANS.professional.monthlyCents, 79900);
-assert.equal(PLANS.enterprise.monthlyCents, null);
-assert.ok(publicCatalog().every(p => p.checkoutEnabled === false));
+
+const { PLANS, publicCatalog, SETUP_FEE_CENTS } = require('../services/pricingCatalog');
+assert.equal(Object.keys(PLANS).length,6);
+assert.equal(SETUP_FEE_CENTS,199900);
+assert.equal(PLANS.tier_1.flexMonthlyCents,34900);
+assert.equal(PLANS.tier_1.twelveMonthMonthlyCents,24900);
+assert.equal(PLANS.tier_6.flexMonthlyCents,449900);
+assert.equal(PLANS.tier_6.sixMonthMonthlyCents,399900);
+assert.equal(PLANS.tier_6.twelveMonthMonthlyCents,349900);
+assert.ok(publicCatalog().every(p=>p.checkoutEnabled===false));

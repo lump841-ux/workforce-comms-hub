@@ -33,3 +33,9 @@ assert.equal(quote('tier_6','six_month').monthlyCents,399900);
 assert.equal(quote('tier_1','flex').checkoutEnabled,false);
 assert.equal(quote('tier_1','flex').monthlyBillingStarts,'one_calendar_month_after_activation');
 assert.throws(()=>quote('invalid','flex'));
+
+const summary = require('../services/agencyOrderSummary').orderSummary('tier_1','flex');
+assert.equal(summary.charges.dueOnSignupCents,149900);
+assert.equal(summary.charges.subscriptionMonthlyCents,34900);
+assert.equal(summary.canPay,false);
+assert.equal(summary.canSign,false);

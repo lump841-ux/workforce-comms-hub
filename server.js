@@ -18,15 +18,23 @@ const clientRoutes = require('./routes/client');
 
 const app = express();
 const PORT = process.env.PORT || 4400;
+// Behind Railway's reverse proxy, secure cookies rely on the forwarded scheme.
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error('Production requires SESSION_SECRET of at least 32 characters');
+  }
+}
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'workforce-comms-hub-dev-secret-change-me',
+    secret: process.env.SESSION_SECRET || 'local-development-only-not-for-production',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 * 7, httpOnly: true }
+    cookie: { maxAge: 1000 * 60 * 60 * 24 * 7, httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }
   })
 );
 

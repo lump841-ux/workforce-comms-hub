@@ -113,7 +113,7 @@
         <label>Shift</label>
         <select id="photoShift"></select>
         <label>Photo</label>
-        <input type="file" id="photoFile" accept="image/*" />
+        <input type="file" id="photoFile" accept="image/png,image/jpeg,image/gif,image/webp" />
         <label>Caption (optional)</label>
         <input id="photoCaption" placeholder="e.g. Job site cleared" />
         <button class="btn btn-primary" style="margin-top:12px" onclick="submitPhoto()">Upload</button>
@@ -148,6 +148,7 @@
   </div>
 </div>
 
+<script src="/media-policy.js"></script>
 <script src="/app.js"></script>
 <script>
 let CURRENT_USER = null;
@@ -237,12 +238,12 @@ function renderToday() {
   card.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
       <div>
-        <div style="font-size:18px;font-weight:600">${shift.job_title}</div>
-        <div style="color:var(--ink-soft);margin-top:2px">${shift.company_name}${shift.site_name ? ' · ' + shift.site_name : ''}</div>
-        <div style="color:var(--ink-soft);margin-top:2px">${fmtDate(shift.shift_date)} · ${shift.start_time}–${shift.end_time}</div>
-        ${shift.address ? `<div style="color:var(--ink-soft);margin-top:2px">📍 ${shift.address} ${mapUrl ? `· <a href="${mapUrl}" target="_blank" rel="noopener">Directions</a>` : ''}</div>` : ''}
+        <div style="font-size:18px;font-weight:600">${escapeHtml(shift.job_title)}</div>
+        <div style="color:var(--ink-soft);margin-top:2px">${escapeHtml(shift.company_name)}${shift.site_name ? ' · ' + escapeHtml(shift.site_name) : ''}</div>
+        <div style="color:var(--ink-soft);margin-top:2px">${fmtDate(shift.shift_date)} · ${escapeHtml(shift.start_time)}–${escapeHtml(shift.end_time)}</div>
+        ${shift.address ? `<div style="color:var(--ink-soft);margin-top:2px">📍 ${escapeHtml(shift.address)} ${mapUrl ? `· <a href="${mapUrl}" target="_blank" rel="noopener">Directions</a>` : ''}</div>` : ''}
         <div id="supervisorLine" style="color:var(--ink-soft);margin-top:2px;font-size:13px">Loading supervisor…</div>
-        ${shift.running_late_at ? `<div style="color:#b8860b;margin-top:4px;font-size:13px">⚠ You reported running late${shift.late_eta ? ` — ETA ${shift.late_eta}` : ''}</div>` : ''}
+        ${shift.running_late_at ? `<div style="color:#b8860b;margin-top:4px;font-size:13px">⚠ You reported running late${shift.late_eta ? ` — ETA ${escapeHtml(shift.late_eta)}` : ''}</div>` : ''}
       </div>
       <div>${pill(shift.status)}</div>
     </div>
@@ -286,7 +287,7 @@ function openEmergencyModal() {
         <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
         <h3 style="color:#c0392b">🚨 Emergency / Need Help</h3>
         <p style="margin:0 0 12px;font-size:13px;color:var(--ink-soft)">This immediately alerts your agency AND the client supervisor, any time of day — even if the office is closed.</p>
-        ${shift ? `<div style="font-size:13px;color:var(--ink-soft);margin-bottom:10px">Re: ${shift.job_title} at ${shift.company_name}</div>` : ''}
+        ${shift ? `<div style="font-size:13px;color:var(--ink-soft);margin-bottom:10px">Re: ${escapeHtml(shift.job_title)} at ${escapeHtml(shift.company_name)}</div>` : ''}
         <label>What's happening?</label>
         <textarea id="emergencyDetails" rows="4" placeholder="Describe what's going on…" autofocus></textarea>
         <button class="btn btn-primary" style="margin-top:12px;background:#c0392b;border-color:#c0392b" onclick="submitEmergency('${shift ? shift.id : ''}')">Send Emergency Alert</button>
@@ -343,7 +344,7 @@ async function openShiftTimeline(shiftId) {
         <div style="max-height:420px;overflow-y:auto">
           ${events.length ? events.map((e) => `
             <div style="padding:8px 0;border-bottom:1px solid var(--line)">
-              <div style="font-size:13px">${e.label}</div>
+              <div style="font-size:13px">${escapeHtml(e.label)}</div>
               <div style="font-size:11px;color:var(--ink-soft)">${fmtDateTime(e.at)}</div>
             </div>`).join('') : '<div class="empty">No events yet.</div>'}
         </div>
@@ -356,7 +357,7 @@ async function openShiftTimeline(shiftId) {
 function populateTimeDisputeShiftPicker() {
   const sel = document.getElementById('tdShift');
   const shifts = ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history);
-  sel.innerHTML = shifts.map((s) => `<option value="${s.id}">${s.job_title} — ${fmtDate(s.shift_date)} (${s.company_name})</option>`).join('') || '<option value="">No shifts yet</option>';
+  sel.innerHTML = shifts.map((s) => `<option value="${s.id}">${escapeHtml(s.job_title)} — ${fmtDate(s.shift_date)} (${escapeHtml(s.company_name)})</option>`).join('') || '<option value="">No shifts yet</option>';
 }
 async function submitTimeDispute() {
   const shiftId = document.getElementById('tdShift').value;
@@ -370,14 +371,14 @@ async function submitTimeDispute() {
     await api(`/temp/shifts/${shiftId}/time-dispute`, { method: 'POST', body: { category, reportedHours: Number(reportedHours), workerClaim } });
     msg.innerHTML = `<div class="ok">Sent to your agency for review.</div>`;
     document.getElementById('tdClaim').value = '';
-  } catch (e) { msg.innerHTML = `<div class="err">${e.message}</div>`; }
+  } catch (e) { msg.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
 }
 
 async function loadBreakStatus(shiftId) {
   const { breaks } = await api(`/temp/shifts/${shiftId}/breaks`);
   const open = breaks.find((b) => !b.ended_at);
   document.getElementById('breakStatus').innerHTML = open
-    ? `<div>On a ${open.break_type} break since ${fmtDateTime(open.started_at)}.</div>
+    ? `<div>On a ${escapeHtml(open.break_type)} break since ${fmtDateTime(open.started_at)}.</div>
        <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="endBreak('${shiftId}')">End Break</button>`
     : `<div style="display:flex;gap:8px;flex-wrap:wrap">
          <button class="btn btn-outline btn-sm" onclick="startBreak('${shiftId}','short')">Start Short Break</button>
@@ -472,10 +473,10 @@ function renderShiftTables() {
     <table><thead><tr><th>Client</th><th>Job</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
     <tbody>${upcoming.map((s) => `
       <tr>
-        <td>${s.company_name}${s.site_name ? ' · ' + s.site_name : ''}</td>
-        <td>${s.job_title}</td>
+        <td>${escapeHtml(s.company_name)}${s.site_name ? ' · ' + escapeHtml(s.site_name) : ''}</td>
+        <td>${escapeHtml(s.job_title)}</td>
         <td>${fmtDate(s.shift_date)}</td>
-        <td>${s.start_time}–${s.end_time}</td>
+        <td>${escapeHtml(s.start_time)}–${escapeHtml(s.end_time)}</td>
         <td>${pill(s.status)}</td>
         <td>
           ${s.status === 'scheduled' ? `<button class="btn btn-outline btn-sm" onclick="confirmShift('${s.id}')">Confirm</button>` : ''}
@@ -486,7 +487,7 @@ function renderShiftTables() {
 
   document.getElementById('historyShifts').innerHTML = history.length ? `
     <table><thead><tr><th>Client</th><th>Job</th><th>Date</th><th>Status</th></tr></thead>
-    <tbody>${history.map((s) => `<tr><td>${s.company_name}</td><td>${s.job_title}</td><td>${fmtDate(s.shift_date)}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
+    <tbody>${history.map((s) => `<tr><td>${escapeHtml(s.company_name)}</td><td>${escapeHtml(s.job_title)}</td><td>${fmtDate(s.shift_date)}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty">No shift history yet.</div>`;
 }
 
@@ -505,8 +506,8 @@ async function loadOpenShifts() {
     <div class="card" style="box-shadow:none;border:1px solid var(--line);margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
-          <strong>${s.job_title}</strong> at ${s.company_name}${s.site_name ? ' · ' + s.site_name : ''}<br/>
-          <span style="color:var(--ink-soft);font-size:13px">${fmtDate(s.shift_date)} · ${s.start_time}–${s.end_time}</span>
+          <strong>${escapeHtml(s.job_title)}</strong> at ${escapeHtml(s.company_name)}${s.site_name ? ' · ' + escapeHtml(s.site_name) : ''}<br/>
+          <span style="color:var(--ink-soft);font-size:13px">${fmtDate(s.shift_date)} · ${escapeHtml(s.start_time)}–${escapeHtml(s.end_time)}</span>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary btn-sm" onclick="acceptOpen('${s.replacement_request_id}')">Accept</button>
@@ -535,8 +536,8 @@ async function loadConversations() {
 
   document.getElementById('convList').innerHTML = conversations.length ? conversations.map((c) => `
     <div class="conv-item ${ACTIVE_CONV === c.id ? 'active' : ''}" onclick="openConv('${c.id}')">
-      <div class="subj">${c.subject || 'Conversation'} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
-      <div class="prev">${c.last_message || 'No messages yet'}</div>
+      <div class="subj">${escapeHtml(c.subject || 'Conversation')} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
+      <div class="prev">${escapeHtml(c.last_message || 'No messages yet')}</div>
     </div>`).join('') : `<div class="empty">No conversations yet.</div>`;
 
   if (!ACTIVE_CONV) {
@@ -560,10 +561,11 @@ async function startConversation() {
 async function openConv(id) {
   ACTIVE_CONV = id;
   const { conversation, messages } = await api(`/conversations/${id}`);
+  await api(`/conversations/${id}/read`, { method: 'POST' }).catch(() => toast('Messages loaded, but read status could not be saved.', true));
   document.getElementById('convPane').innerHTML = `
-    <div class="conv-header"><strong>${conversation.subject || 'Conversation'}</strong> ${pill(conversation.status)}</div>
+    <div class="conv-header"><strong>${escapeHtml(conversation.subject || 'Conversation')}</strong> ${pill(conversation.status)}</div>
     <div class="conv-messages" id="convMessages">${messages.map((m) => `
-      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${escapeHtml(m.body)}<div class="meta">${escapeHtml(m.sender_name)} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
     <div class="conv-input"><input id="replyBody" placeholder="Type a reply…" onkeydown="if(event.key==='Enter')sendReply('${id}')"/><button class="btn btn-primary" onclick="sendReply('${id}')">Send</button></div>`;
   const box = document.getElementById('convMessages'); box.scrollTop = box.scrollHeight;
   loadConversations();
@@ -582,7 +584,7 @@ async function sendReply(id) {
 function populateIssueShiftPicker() {
   const sel = document.getElementById('issueShift');
   const opts = ['<option value="">Not shift-specific</option>'].concat(
-    ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history).map((s) => `<option value="${s.id}">${s.job_title} — ${fmtDate(s.shift_date)} (${s.company_name})</option>`)
+    ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history).map((s) => `<option value="${s.id}">${escapeHtml(s.job_title)} — ${fmtDate(s.shift_date)} (${escapeHtml(s.company_name)})</option>`)
   );
   sel.innerHTML = opts.join('');
 }
@@ -599,7 +601,7 @@ async function submitIssue() {
     document.getElementById('issueDescription').value = '';
     loadConversations();
   } catch (e) {
-    msg.innerHTML = `<div class="err">${e.message}</div>`;
+    msg.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -607,7 +609,7 @@ async function submitIssue() {
 function populatePhotoShiftPicker() {
   const sel = document.getElementById('photoShift');
   const shifts = ALL_SHIFTS.upcoming.concat(ALL_SHIFTS.history);
-  sel.innerHTML = shifts.map((s) => `<option value="${s.id}">${s.job_title} — ${fmtDate(s.shift_date)} (${s.company_name})</option>`).join('') || '<option value="">No shifts yet</option>';
+  sel.innerHTML = shifts.map((s) => `<option value="${s.id}">${escapeHtml(s.job_title)} — ${fmtDate(s.shift_date)} (${escapeHtml(s.company_name)})</option>`).join('') || '<option value="">No shifts yet</option>';
   if (shifts.length) loadPhotoGallery(shifts[0].id);
   sel.onchange = () => loadPhotoGallery(sel.value);
 }
@@ -618,8 +620,8 @@ async function loadPhotoGallery(shiftId) {
   document.getElementById('photoGallery').innerHTML = photos.length ? `
     <div style="display:flex;flex-wrap:wrap;gap:10px">${photos.map((p) => `
       <div style="width:120px">
-        <img src="${p.data_url}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" />
-        <div style="font-size:11px;color:var(--ink-soft);margin-top:4px">${p.caption || ''}</div>
+        <img src="${escapeHtml(safeImageSrc(p.data_url))}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" />
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:4px">${escapeHtml(p.caption || '')}</div>
       </div>`).join('')}</div>` : `<div class="empty">No photos uploaded for this shift yet.</div>`;
 }
 
@@ -630,16 +632,18 @@ function submitPhoto() {
   const msg = document.getElementById('photoMsg');
   if (!shiftId) { msg.innerHTML = `<div class="err">Pick a shift first.</div>`; return; }
   if (!file) { msg.innerHTML = `<div class="err">Choose a photo to upload.</div>`; return; }
+  if (!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type) || file.size > MediaPolicy.MAX_IMAGE_BYTES) { msg.innerHTML = '<div class="err">Choose a PNG, JPEG, GIF or WebP image no larger than 512 KB.</div>'; return; }
   const reader = new FileReader();
   reader.onload = async () => {
     try {
+      MediaPolicy.validateDataImage(reader.result);
       await api(`/temp/shifts/${shiftId}/photos`, { method: 'POST', body: { dataUrl: reader.result, caption } });
       msg.innerHTML = `<div class="ok">Photo uploaded.</div>`;
       document.getElementById('photoFile').value = '';
       document.getElementById('photoCaption').value = '';
       loadPhotoGallery(shiftId);
     } catch (e) {
-      msg.innerHTML = `<div class="err">${e.message}</div>`;
+      msg.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`;
     }
   };
   reader.readAsDataURL(file);
@@ -654,7 +658,7 @@ async function loadNotifications() {
   badge.textContent = unread;
   document.getElementById('notifList').innerHTML = notifications.length ? notifications.map((n) => `
     <div style="padding:12px 4px;border-bottom:1px solid var(--line);${n.read ? 'opacity:.6' : ''}">
-      <strong>${n.title}</strong><br/><span style="font-size:13px;color:var(--ink-soft)">${n.body || ''}</span>
+      <strong>${escapeHtml(n.title)}</strong><br/><span style="font-size:13px;color:var(--ink-soft)">${escapeHtml(n.body || '')}</span>
       <div style="font-size:11px;color:var(--ink-soft);margin-top:2px">${fmtDateTime(n.created_at)}</div>
     </div>`).join('') : `<div class="empty">No notifications.</div>`;
 }
@@ -679,7 +683,7 @@ async function saveProfile() {
     document.getElementById('uName').textContent = fullName;
     document.getElementById('avatar').textContent = initials(fullName);
   } catch (e) {
-    msg.innerHTML = `<div class="err">${e.message}</div>`;
+    msg.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`;
   }
 }
 

@@ -6,7 +6,18 @@
   "type": "commonjs",
   "scripts": {
     "start": "node --experimental-sqlite server.js",
-    "test": "node --experimental-sqlite test/smoke.js"
+    "test": "node --experimental-sqlite test/smoke.js && npm run test:critical && npm run test:csv && npm run test:messaging && npm run test:practice && npm run test:accounts && npm run test:media && npm run test:shift-scope && npm run test:mobile-uploads && npm run test:session-security && npm run test:pricing-demo && npm run test:pilot-journey",
+    "test:critical": "node --experimental-sqlite test/critical-regressions.js",
+    "test:csv": "node --experimental-sqlite test/csv-import.js",
+    "test:messaging": "node --experimental-sqlite test/messaging-regressions.js && node test/messaging-rendering.js",
+    "test:practice": "node --test test/practice.test.js",
+    "test:accounts": "node --experimental-sqlite test/account-lifecycle.js",
+    "test:media": "node --experimental-sqlite test/media-regressions.js && node test/media-rendering.js",
+    "test:shift-scope": "node --experimental-sqlite test/shift-scope-regressions.js",
+    "test:mobile-uploads": "node --experimental-sqlite test/mobile-uploads.js",
+    "test:session-security": "node --experimental-sqlite test/session-security.js",
+    "test:pricing-demo": "node test/pricing-demo.js",
+    "test:pilot-journey": "node --experimental-sqlite test/pilot-journey.js"
   },
   "dependencies": {
     "express": "^4.19.2",

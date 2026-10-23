@@ -23,6 +23,7 @@ function migrate() {
     }
   };
   try {
+    addColumnIfMissing('users', 'auth_version', 'INTEGER NOT NULL DEFAULT 0');
     addColumnIfMissing('client_orgs', 'contact_email', 'TEXT');
     addColumnIfMissing('client_orgs', 'contact_phone', 'TEXT');
     addColumnIfMissing('client_orgs', 'notification_prefs', 'TEXT');

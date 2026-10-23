@@ -153,6 +153,7 @@
   </div>
 </div>
 
+<script src="/media-policy.js"></script>
 <script src="/app.js"></script>
 <script>
 let CURRENT_USER = null;
@@ -216,8 +217,8 @@ async function loadAgencies() {
     sel.disabled = true;
   } else {
     sel.disabled = false;
-    sel.innerHTML = active.map((a) => `<option value="${a.linkId}" ${a.agencyId === currentAgencyId ? 'selected' : ''}>${a.agencyName}</option>`).join('')
-      + (pending.length ? `<option disabled>──────────</option>` + pending.map((a) => `<option disabled>${a.agencyName} (pending approval)</option>`).join('') : '');
+    sel.innerHTML = active.map((a) => `<option value="${a.linkId}" ${a.agencyId === currentAgencyId ? 'selected' : ''}>${escapeHtml(a.agencyName)}</option>`).join('')
+      + (pending.length ? `<option disabled>──────────</option>` + pending.map((a) => `<option disabled>${escapeHtml(a.agencyName)} (pending approval)</option>`).join('') : '');
   }
 }
 
@@ -252,7 +253,7 @@ async function submitConnectAgency() {
     document.querySelector('.modal-backdrop').remove();
     toast('Request sent — waiting on the agency to approve');
     loadAgencies();
-  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+  } catch (e) { msgEl.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
 }
 
 // ===== Overview =====
@@ -296,8 +297,8 @@ async function loadTodayWorkers() {
     return `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <div>
-        <strong>${s.temp_name || 'Unassigned'}</strong> <span class="pill ${st.cls ? 'pill-' + st.cls : ''}">${st.label}</span>
-        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${s.job_title} · ${s.start_time}–${s.end_time}${s.temp_phone ? ' · ' + s.temp_phone : ''}</div>
+        <strong>${escapeHtml(s.temp_name || 'Unassigned')}</strong> <span class="pill ${st.cls ? 'pill-' + st.cls : ''}">${escapeHtml(st.label)}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${escapeHtml(s.job_title)} · ${escapeHtml(s.start_time)}–${escapeHtml(s.end_time)}${s.temp_phone ? ' · ' + escapeHtml(s.temp_phone) : ''}</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" onclick="confirmWorkerArrival('${s.id}')" ${s.supervisor_confirmed_arrival_at ? 'disabled' : ''}>${s.supervisor_confirmed_arrival_at ? 'Arrival Confirmed ✓' : 'Confirm Arrived'}</button>
@@ -374,7 +375,7 @@ async function openWorkerTimeline(shiftId) {
         <div style="max-height:420px;overflow-y:auto">
           ${events.length ? events.map((e) => `
             <div style="padding:8px 0;border-bottom:1px solid var(--line)">
-              <div style="font-size:13px">${e.label}</div>
+              <div style="font-size:13px">${escapeHtml(e.label)}</div>
               <div style="font-size:11px;color:var(--ink-soft)">${fmtDateTime(e.at)}</div>
             </div>`).join('') : '<div class="empty">No events yet.</div>'}
         </div>
@@ -398,7 +399,7 @@ function renderPhotoGallery(photos) {
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
         ${photos.map((p) => `
           <div onclick="openPhotoLightbox('${p.id}')" style="cursor:pointer;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--line)">
-            <img src="${p.data_url}" alt="Shift photo" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=&quot;display:flex;align-items:center;justify-content:center;height:100%;font-size:20px;color:var(--ink-soft)&quot;>📷</div>'" />
+            <img src="${escapeHtml(safeImageSrc(p.data_url))}" alt="Shift photo" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=&quot;display:flex;align-items:center;justify-content:center;height:100%;font-size:20px;color:var(--ink-soft)&quot;>📷</div>'" />
           </div>`).join('')}
       </div>
     </div>`;
@@ -412,10 +413,10 @@ function openPhotoLightbox(photoId) {
     <div class="modal-backdrop" style="z-index:60" onclick="if(event.target===this)this.remove()">
       <div class="modal" style="max-width:640px;padding:16px">
         <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
-        <img src="${p.data_url}" alt="Shift photo" style="width:100%;max-height:70vh;object-fit:contain;border-radius:8px" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=&quot;empty&quot;>Photo could not be loaded.</div>')" />
+        <img src="${escapeHtml(safeImageSrc(p.data_url))}" alt="Shift photo" style="width:100%;max-height:70vh;object-fit:contain;border-radius:8px" onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=&quot;empty&quot;>Photo could not be loaded.</div>')" />
         <div style="margin-top:10px;font-size:12.5px;color:var(--ink-soft)">
-          Uploaded by ${who} — ${fmtDateTime(p.created_at)}
-          ${p.caption ? `<div style="margin-top:4px;color:var(--ink)">${p.caption}</div>` : ''}
+          Uploaded by ${escapeHtml(who)} — ${fmtDateTime(p.created_at)}
+          ${p.caption ? `<div style="margin-top:4px;color:var(--ink)">${escapeHtml(p.caption)}</div>` : ''}
         </div>
       </div>
     </div>`;
@@ -428,8 +429,8 @@ async function loadWorkers() {
   document.getElementById('workersTable').innerHTML = workers.length ? `
     <table><thead><tr><th>Worker</th><th>Contact</th><th>Last Shift</th><th>Status</th><th>Total Shifts</th></tr></thead>
     <tbody>${workers.map((w) => `<tr>
-      <td>${w.full_name}</td>
-      <td>${w.email || '—'}${w.phone ? '<br/><span style="color:var(--ink-soft);font-size:12px">' + w.phone + '</span>' : ''}</td>
+      <td>${escapeHtml(w.full_name)}</td>
+      <td>${escapeHtml(w.email || '—')}${w.phone ? '<br/><span style="color:var(--ink-soft);font-size:12px">' + escapeHtml(w.phone) + '</span>' : ''}</td>
       <td>${fmtDate(w.last_shift_date)}</td>
       <td>${w.last_status ? pill(w.last_status) : '—'}</td>
       <td>${w.total_shifts}</td>
@@ -442,7 +443,7 @@ async function loadShifts() {
   const { shifts } = await api('/client/shifts' + (date ? `?date=${date}` : ''));
   document.getElementById('shiftsTable').innerHTML = shifts.length ? `
     <table><thead><tr><th>Temp</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
-    <tbody>${shifts.map((s) => `<tr><td>${s.temp_name || 'Unassigned'}</td><td>${fmtDate(s.shift_date)}</td><td>${s.start_time}–${s.end_time}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
+    <tbody>${shifts.map((s) => `<tr><td>${escapeHtml(s.temp_name || 'Unassigned')}</td><td>${fmtDate(s.shift_date)}</td><td>${escapeHtml(s.start_time)}–${escapeHtml(s.end_time)}</td><td>${pill(s.status)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty">No shifts on record yet.</div>`;
 }
 
@@ -464,11 +465,11 @@ async function loadAttendance() {
   document.getElementById('attendanceTable').innerHTML = shifts.length ? `
     <table><thead><tr><th>Worker</th><th>Date</th><th>Scheduled</th><th>Status</th><th></th></tr></thead>
     <tbody>${shifts.map((s) => `<tr>
-      <td>${s.temp_name || 'Unassigned'}</td>
+      <td>${escapeHtml(s.temp_name || 'Unassigned')}</td>
       <td>${fmtDate(s.shift_date)}</td>
-      <td>${s.start_time}–${s.end_time}</td>
+      <td>${escapeHtml(s.start_time)}–${escapeHtml(s.end_time)}</td>
       <td>${pill(s.status)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="disputeShift('${s.id}','${(s.temp_name || 'Unassigned').replace(/'/g, "\\'")}','${s.shift_date}')">Dispute</button></td>
+      <td><button class="btn btn-outline btn-sm" data-temp-name="${escapeHtml(s.temp_name || 'Unassigned')}" data-shift-date="${escapeHtml(s.shift_date)}" onclick="disputeShift('${s.id}',this.dataset.tempName,this.dataset.shiftDate)">Dispute</button></td>
     </tr>`).join('')}</tbody></table>` : `<div class="empty">No attendance records for this range.</div>`;
 }
 
@@ -481,18 +482,19 @@ async function loadConversations() {
   const { conversations } = await api('/conversations');
   document.getElementById('convList').innerHTML = conversations.length ? conversations.map((c) => `
     <div class="conv-item ${ACTIVE_CONV === c.id ? 'active' : ''}" onclick="openConv('${c.id}')">
-      <div class="subj">${c.subject || 'Conversation'} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
-      <div class="prev">${c.last_message || 'No messages yet'}</div>
+      <div class="subj">${escapeHtml(c.subject || 'Conversation')} ${c.unread_count ? `<span class="badge">${c.unread_count}</span>` : ''}</div>
+      <div class="prev">${escapeHtml(c.last_message || 'No messages yet')}</div>
     </div>`).join('') : `<div class="empty">No conversations yet.</div>`;
 }
 
 async function openConv(id) {
   ACTIVE_CONV = id;
   const { conversation, messages } = await api(`/conversations/${id}`);
+  await api(`/conversations/${id}/read`, { method: 'POST' }).catch(() => toast('Messages loaded, but read status could not be saved.', true));
   document.getElementById('convPane').innerHTML = `
-    <div class="conv-header"><strong>${conversation.subject || 'Conversation'}</strong> ${pill(conversation.status)}</div>
+    <div class="conv-header"><strong>${escapeHtml(conversation.subject || 'Conversation')}</strong> ${pill(conversation.status)}</div>
     <div class="conv-messages" id="convMessages">${messages.map((m) => `
-      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${escapeHtml(m.body)}<div class="meta">${escapeHtml(m.sender_name)} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
     <div class="conv-input"><input id="replyBody" placeholder="Type a reply…" onkeydown="if(event.key==='Enter')sendReply('${id}')"/><button class="btn btn-primary" onclick="sendReply('${id}')">Send</button></div>`;
   const box = document.getElementById('convMessages'); box.scrollTop = box.scrollHeight;
   loadConversations();
@@ -513,18 +515,19 @@ async function loadIssues() {
   document.getElementById('issuesTable').innerHTML = issues.length ? `
     <table><thead><tr><th>Subject</th><th>Priority</th><th>Status</th><th>Reported</th></tr></thead>
     <tbody>${issues.map((c) => `<tr style="cursor:pointer" onclick="selectIssue('${c.id}')">
-      <td>${c.subject || 'Issue'}</td><td>${pill(c.priority || 'urgent')}</td><td>${pill(c.status)}</td><td>${fmtDateTime(c.created_at)}</td>
+      <td>${escapeHtml(c.subject || 'Issue')}</td><td>${pill(c.priority || 'urgent')}</td><td>${pill(c.status)}</td><td>${fmtDateTime(c.created_at)}</td>
     </tr>`).join('')}</tbody></table>` : `<div class="empty">No issues reported yet.</div>`;
 }
 
 async function selectIssue(id) {
   SELECTED_ISSUE = id;
   const { conversation, messages } = await api(`/conversations/${id}`);
+  await api(`/conversations/${id}/read`, { method: 'POST' }).catch(() => toast('Messages loaded, but read status could not be saved.', true));
   document.getElementById('issueDetail').innerHTML = `
-    <h3 style="margin-top:0">${conversation.subject || 'Issue'}</h3>
+    <h3 style="margin-top:0">${escapeHtml(conversation.subject || 'Issue')}</h3>
     <div style="margin-bottom:10px">${pill(conversation.priority || 'urgent')} ${pill(conversation.status)}</div>
     <div class="conv-messages" style="max-height:340px">${messages.map((m) => `
-      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${m.body}<div class="meta">${m.sender_name} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
+      <div class="bubble ${m.sender_id === CURRENT_USER.id ? 'me' : ''}">${escapeHtml(m.body)}<div class="meta">${escapeHtml(m.sender_name)} · ${fmtDateTime(m.created_at)}</div></div>`).join('')}</div>
     <div class="conv-input"><input id="issueReplyBody" placeholder="Add an update…" onkeydown="if(event.key==='Enter')sendIssueReply('${id}')"/><button class="btn btn-primary" onclick="sendIssueReply('${id}')">Send</button></div>`;
 }
 async function sendIssueReply(id) {
@@ -542,7 +545,7 @@ function openReportIssueModal(prefillSubject, shiftId) {
       <div class="modal">
         <span class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</span>
         <h3>Report New Issue</h3>
-        <label>Subject</label><input id="r_subject" value="${prefillSubject ? prefillSubject.replace(/"/g, '&quot;') : ''}" placeholder="e.g. No show / sub needed" />
+        <label>Subject</label><input id="r_subject" value="${escapeHtml(prefillSubject || '')}" placeholder="e.g. No show / sub needed" />
         <label>Priority</label>
         <select id="r_priority"><option value="urgent">Urgent</option><option value="critical">Critical</option></select>
         <label>Details</label><textarea id="r_message" rows="5" placeholder="What happened?"></textarea>
@@ -564,7 +567,7 @@ async function raiseIssue(shiftId) {
     document.querySelector('.modal-backdrop').remove();
     toast('Sent — your agency has been notified');
     loadOverview(); loadConversations(); loadIssues();
-  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+  } catch (e) { msgEl.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
 }
 
 // ===== Replacements =====
@@ -586,9 +589,9 @@ async function loadReplacements() {
   document.getElementById('replacementsTable').innerHTML = requests.length ? `
     <table><thead><tr><th>Role</th><th>Original</th><th>Shift</th><th>Status</th><th>Requested</th><th></th></tr></thead>
     <tbody>${requests.map((r) => `<tr>
-      <td>${r.job_title || '—'}</td>
-      <td>${r.original_temp_name || '—'}</td>
-      <td>${fmtDate(r.shift_date)} ${r.start_time}–${r.end_time}</td>
+      <td>${escapeHtml(r.job_title || '—')}</td>
+      <td>${escapeHtml(r.original_temp_name || '—')}</td>
+      <td>${fmtDate(r.shift_date)} ${escapeHtml(r.start_time)}–${escapeHtml(r.end_time)}</td>
       <td>${pill(r.status)}<div style="font-size:12px;color:var(--ink-soft)">${clientReplacementStageLabel(r)}</div></td>
       <td>${fmtDateTime(r.created_at)}</td>
       <td>${r.status === 'filled' ? `<button class="btn btn-primary btn-sm" onclick="confirmReplacementAction('${r.id}')">Confirm</button>` : ''}</td>
@@ -615,7 +618,7 @@ const REPLACEMENT_REASON_CATEGORIES = [
 async function openReplacementModal() {
   const today = new Date().toISOString().slice(0, 10);
   const { shifts } = await api(`/client/shifts?date=${today}`);
-  const options = shifts.map((s) => `<option value="${s.id}">${s.temp_name || 'Unassigned'} — ${s.start_time}-${s.end_time}</option>`).join('');
+  const options = shifts.map((s) => `<option value="${s.id}">${escapeHtml(s.temp_name || 'Unassigned')} — ${escapeHtml(s.start_time)}-${escapeHtml(s.end_time)}</option>`).join('');
   const reasonOptions = REPLACEMENT_REASON_CATEGORIES.map((c) => `<option value="${c.value}">${c.label}</option>`).join('');
   const html = `
     <div class="modal-backdrop" onclick="if(event.target===this)this.remove()">
@@ -647,7 +650,7 @@ async function submitReplacementRequest() {
     document.querySelector('.modal-backdrop').remove();
     toast('Request sent — awaiting agency review');
     loadReplacements();
-  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+  } catch (e) { msgEl.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
 }
 
 // ===== Reports =====
@@ -700,14 +703,14 @@ async function loadSettings() {
   const { locations } = await api('/client/locations');
   document.getElementById('locationsList').innerHTML = locations.length ? locations.map((l) => `
     <div style="padding:10px 0;border-bottom:1px solid var(--line)">
-      <div style="font-weight:600">${l.site_name || l.agencyName}</div>
-      <div style="font-size:12px;color:var(--ink-soft)">${l.agencyName} · ${pill(l.status)}</div>
+      <div style="font-weight:600">${escapeHtml(l.site_name || l.agencyName)}</div>
+      <div style="font-size:12px;color:var(--ink-soft)">${escapeHtml(l.agencyName)} · ${pill(l.status)}</div>
     </div>`).join('') : `<div class="empty">No sites on record.</div>`;
 
   const { supervisors } = await api('/client/supervisors');
   document.getElementById('supervisorsList').innerHTML = supervisors.length ? supervisors.map((s) => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
-      <div><div style="font-weight:600">${s.full_name}</div><div style="font-size:12px;color:var(--ink-soft)">${s.email}</div></div>
+      <div><div style="font-weight:600">${escapeHtml(s.full_name)}</div><div style="font-size:12px;color:var(--ink-soft)">${escapeHtml(s.email)}</div></div>
       ${s.active ? '<span class="pill pill-active">active</span>' : `<button class="btn btn-outline btn-sm" onclick="deactivateSupervisor('${s.id}')">Deactivate</button>`}
     </div>`).join('') : `<div class="empty">No additional supervisors yet.</div>`;
 }
@@ -721,7 +724,7 @@ async function saveOrgSettings() {
     await api('/client/settings', { method: 'POST', body: { companyName, contactEmail, contactPhone } });
     msgEl.innerHTML = `<div class="ok">Saved.</div>`;
     toast('Company profile saved');
-  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+  } catch (e) { msgEl.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
 }
 
 async function saveNotificationPrefs() {
@@ -754,9 +757,9 @@ async function submitInviteSupervisor() {
   if (!fullName || !email) { msgEl.innerHTML = `<div class="err">Name and email are required</div>`; return; }
   try {
     const { tempPassword } = await api('/client/supervisors/invite', { method: 'POST', body: { fullName, email, phone } });
-    msgEl.innerHTML = `<div class="ok">Account created. Temporary password: <input readonly value="${tempPassword}" onclick="this.select()" style="margin-top:6px" /></div>`;
+    msgEl.innerHTML = `<div class="ok">Account created. Temporary password: <input readonly value="${escapeHtml(tempPassword)}" onclick="this.select()" style="margin-top:6px" /></div>`;
     loadSettings();
-  } catch (e) { msgEl.innerHTML = `<div class="err">${e.message}</div>`; }
+  } catch (e) { msgEl.innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; }
 }
 async function deactivateSupervisor(id) {
   await api(`/client/supervisors/${id}/deactivate`, { method: 'POST' });

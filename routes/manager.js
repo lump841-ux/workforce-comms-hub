@@ -1,3 +1,4 @@
+const { mediaShiftForSession } = require('../services/mediaAccess');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -21,7 +22,7 @@ router.use(requireRole('agency_manager', 'agency_admin', 'owner', 'recruiter'));
 // Settings, or the Archive (which surfaces clients/shifts/escalations a
 // recruiter shouldn't be managing). These use Express's prefix-matching
 // router.use(path, mw), so each covers every sub-route under that path.
-router.use(['/clients', '/replacements', '/escalations', '/analytics', '/team', '/offices', '/settings', '/archive', '/time-disputes'], denyRoles('recruiter'));
+router.use(['/clients', '/replacements', '/escalations', '/analytics', '/team', '/offices', '/settings', '/archive', '/time-disputes', '/no-shows'], denyRoles('recruiter'));
 router.use('/shifts', (req, res, next) => {
   if (req.session.user.role === 'recruiter' && req.method !== 'GET') {
     return res.status(403).json({ error: 'Recruiters have read-only access to shifts' });
@@ -136,18 +137,16 @@ router.get('/shifts', (req, res) => {
 });
 
 router.get('/shifts/:id/timeline', (req, res) => {
-  const agencyId = req.session.user.agency_id;
-  const shift = get('SELECT id FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
-  res.json(buildShiftTimeline(req.params.id));
+  res.json(buildShiftTimeline(req.params.id, req.session.user));
 });
 
 // Photo proof gallery — pulls every photo attached to this shift regardless
 // of who uploaded it (temp on-the-job proof, client_hr supervisor photos),
 // so the agency sees the same complete record the timeline references.
 router.get('/shifts/:id/photos', (req, res) => {
-  const agencyId = req.session.user.agency_id;
-  const shift = get('SELECT id FROM shifts WHERE id = ? AND agency_id = ?', [req.params.id, agencyId]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   const rows = all(
     `SELECT p.*, u.full_name as uploader_name FROM shift_photos p
@@ -164,6 +163,9 @@ router.post('/shifts', (req, res) => {
   if (!clientId || !jobTitle || !shiftDate || !startTime || !endTime) {
     return res.status(400).json({ error: 'Missing required shift fields' });
   }
+  const client = get('SELECT id FROM clients WHERE id = ? AND agency_id = ? AND archived_at IS NULL', [clientId,u.agency_id]);
+  if (!client) return res.status(404).json({ error: 'Client not available for this agency' });
+  if (tempId && !get("SELECT id FROM users WHERE id = ? AND agency_id = ? AND role = 'temp' AND active = 1 AND archived_at IS NULL", [tempId,u.agency_id])) return res.status(404).json({ error: 'Worker not available for this agency' });
   const shiftId = id('sft');
   run(
     `INSERT INTO shifts (id, agency_id, client_id, temp_id, job_title, shift_date, start_time, end_time, notes, status)
@@ -177,7 +179,7 @@ router.post('/shifts', (req, res) => {
 router.post('/shifts/:id/flag-no-show', (req, res) => {
   const u = req.session.user;
   try {
-    const eventId = manualFlagNoShow(req.params.id, u.id);
+    const eventId = manualFlagNoShow(req.params.id, u.id, u.agency_id);
     res.json({ ok: true, noShowEventId: eventId });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -186,7 +188,8 @@ router.post('/shifts/:id/flag-no-show', (req, res) => {
 
 // Manually trigger a no-show scan (also runs automatically on an interval — see server.js)
 router.post('/no-shows/scan', (req, res) => {
-  const flagged = scanForNoShows();
+  if (!req.session.user.agency_id) return res.status(403).json({ error: 'Agency context required' });
+  const flagged = scanForNoShows(req.session.user.agency_id);
   res.json({ ok: true, flagged });
 });
 
@@ -337,12 +340,16 @@ router.get('/escalations', (req, res) => {
 });
 
 router.post('/escalations/:id/acknowledge', (req, res) => {
-  acknowledgeEscalation(req.params.id, req.session.user.id);
+  if (!acknowledgeEscalation(req.params.id, req.session.user.id, req.session.user.agency_id)) {
+    return res.status(404).json({ error: 'Escalation not found' });
+  }
   res.json({ ok: true });
 });
 
 router.post('/escalations/:id/resolve', (req, res) => {
-  resolveEscalation(req.params.id, req.session.user.id);
+  if (!resolveEscalation(req.params.id, req.session.user.id, req.session.user.agency_id)) {
+    return res.status(404).json({ error: 'Escalation not found' });
+  }
   res.json({ ok: true });
 });
 
@@ -980,7 +987,8 @@ router.get('/time-disputes', (req, res) => {
      JOIN shifts s ON s.id = td.shift_id
      LEFT JOIN users u ON u.id = s.temp_id
      JOIN clients c ON c.id = s.client_id
-     WHERE td.agency_id = ? ORDER BY td.status ASC, td.created_at DESC`,
+     WHERE td.agency_id = ? AND s.agency_id = td.agency_id AND c.agency_id = s.agency_id
+       AND s.archived_at IS NULL AND c.archived_at IS NULL ORDER BY td.status ASC, td.created_at DESC`,
     [agencyId]
   );
   res.json({ disputes: rows });

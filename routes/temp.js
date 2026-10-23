@@ -1,3 +1,6 @@
+const { shiftForSession, offerForSession } = require('../services/shiftAccess');
+const { mediaShiftForSession } = require('../services/mediaAccess');
+const { validateDataImage, normalizeImageSource } = require('../public/media-policy');
 const express = require('express');
 const { run, all, get } = require('../database/db');
 const { id } = require('../services/ids');
@@ -16,15 +19,17 @@ router.get('/shifts', (req, res) => {
   const u = req.session.user;
   const upcoming = all(
     `SELECT s.*, c.company_name, c.site_name, c.address FROM shifts s JOIN clients c ON c.id = s.client_id
-     WHERE s.temp_id = ? AND s.status IN ('scheduled','confirmed','in_progress')
+     WHERE s.temp_id = ? AND s.agency_id = ? AND c.agency_id = s.agency_id
+       AND s.archived_at IS NULL AND c.archived_at IS NULL AND s.status IN ('scheduled','confirmed','in_progress')
      ORDER BY s.shift_date ASC, s.start_time ASC`,
-    [u.id]
+    [u.id, u.agency_id]
   );
   const history = all(
     `SELECT s.*, c.company_name, c.site_name, c.address FROM shifts s JOIN clients c ON c.id = s.client_id
-     WHERE s.temp_id = ? AND s.status IN ('completed','no_show','replaced','cancelled')
+     WHERE s.temp_id = ? AND s.agency_id = ? AND c.agency_id = s.agency_id
+       AND s.archived_at IS NULL AND c.archived_at IS NULL AND s.status IN ('completed','no_show','replaced','cancelled')
      ORDER BY s.shift_date DESC LIMIT 20`,
-    [u.id]
+    [u.id, u.agency_id]
   );
   res.json({ upcoming, history });
 });
@@ -34,16 +39,16 @@ router.get('/shifts', (req, res) => {
 // Assigned Supervisor" and the Message Supervisor picker.
 router.get('/shifts/:id/care-team', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
-  const agencyContacts = all(`SELECT id, full_name, email, phone, role FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
+  const agencyContacts = all(`SELECT id, full_name, email, phone, role FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = getSupervisorsForClient(shift.client_id).map((s) => ({ ...s, role: 'client_hr' }));
   res.json({ agencyContacts, supervisors });
 });
 
 router.post('/shifts/:id/confirm', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   run(`UPDATE shifts SET status = 'confirmed', confirmed_at = datetime('now') WHERE id = ?`, [req.params.id]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'shift_confirmed', entityType: 'shift', entityId: req.params.id });
@@ -52,7 +57,7 @@ router.post('/shifts/:id/confirm', (req, res) => {
 
 router.post('/shifts/:id/clock-in', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   if (['no_show', 'replaced', 'cancelled'].includes(shift.status)) {
     return res.status(400).json({ error: 'This shift is no longer active' });
@@ -64,7 +69,7 @@ router.post('/shifts/:id/clock-in', (req, res) => {
 
 router.post('/shifts/:id/clock-out', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   run(`UPDATE shifts SET status = 'completed', clock_out_at = datetime('now') WHERE id = ?`, [req.params.id]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'clock_out', entityType: 'shift', entityId: req.params.id });
@@ -80,18 +85,21 @@ router.get('/open-shifts', (req, res) => {
      JOIN replacement_requests rr ON rr.id = rc.replacement_request_id
      JOIN shifts s ON s.id = rr.original_shift_id
      JOIN clients c ON c.id = s.client_id
-     WHERE rc.temp_id = ? AND rc.response IS NULL AND rr.status = 'offered'
+     WHERE rc.temp_id = ? AND rr.agency_id = ? AND s.agency_id = rr.agency_id AND c.agency_id = s.agency_id
+       AND s.archived_at IS NULL AND c.archived_at IS NULL AND rc.response IS NULL AND rr.status = 'offered'
      ORDER BY s.shift_date ASC`,
-    [u.id]
+    [u.id, u.agency_id]
   );
   res.json({ openShifts: rows });
 });
 
 router.post('/open-shifts/:requestId/accept', (req, res) => {
   const u = req.session.user;
+  const offer = offerForSession(u, req.params.requestId);
+  if (!offer) return res.status(404).json({ error: 'Offer not found' });
   try {
     const result = acceptReplacement(req.params.requestId, u.id);
-    if (!result.ok) return res.status(409).json({ error: 'This shift has already been filled by another temp' });
+    if (!result.ok) return res.status(409).json({ error: 'This replacement offer is no longer available' });
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -100,6 +108,9 @@ router.post('/open-shifts/:requestId/accept', (req, res) => {
 
 router.post('/open-shifts/:requestId/decline', (req, res) => {
   const u = req.session.user;
+  const offer = offerForSession(u, req.params.requestId);
+  if (!offer) return res.status(404).json({ error: 'Offer not found' });
+  if (offer.request.status !== 'offered' || offer.candidate.response !== null) return res.status(409).json({ error: 'This offer is no longer open' });
   run(
     `UPDATE replacement_candidates SET response = 'declined', responded_at = datetime('now')
      WHERE replacement_request_id = ? AND temp_id = ?`,
@@ -111,7 +122,7 @@ router.post('/open-shifts/:requestId/decline', (req, res) => {
 // ============ SHIFT STATUS UPDATES (On My Way / Running Late / Arrived) ============
 router.post('/shifts/:id/on-my-way', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   run(`UPDATE shifts SET en_route_at = datetime('now') WHERE id = ?`, [req.params.id]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_on_my_way', entityType: 'shift', entityId: req.params.id });
@@ -120,7 +131,7 @@ router.post('/shifts/:id/on-my-way', (req, res) => {
 
 router.post('/shifts/:id/running-late', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   const { minutesLate, reason, eta } = req.body;
   run(`UPDATE shifts SET running_late_at = datetime('now'), late_eta = ? WHERE id = ?`, [eta || null, req.params.id]);
@@ -128,15 +139,17 @@ router.post('/shifts/:id/running-late', (req, res) => {
   // Running late reaches BOTH the agency and the assigned client supervisor —
   // the supervisor is the one standing at the site wondering where the
   // worker is, so they get this the same moment the agency does.
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = getSupervisorsForClient(shift.client_id);
   const body = `${shift.job_title} at ${shift.company_name}${minutesLate ? ` — about ${minutesLate} min late` : ''}${eta ? `, ETA ${eta}` : ''}${reason ? `: ${reason}` : ''}`;
-  notifyMany([...managers.map((m) => m.id), ...supervisors.map((s) => s.id)], {
+  const notice = {
     type: 'shift_reminder',
     title: `${u.full_name} is running late`,
     body,
     link: `/manager/dashboard.html#shifts`
-  });
+  };
+  notifyMany(managers.map(m => m.id), notice);
+  notifyMany(supervisors.map(s => s.id), {...notice, link: '/client/dashboard.html#shifts'});
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_running_late', entityType: 'shift', entityId: req.params.id, meta: { minutesLate, reason, eta } });
   res.json({ ok: true });
 });
@@ -144,17 +157,19 @@ router.post('/shifts/:id/running-late', (req, res) => {
 // ============ ARRIVED (distinct from clock-in — "I'm here" vs "I'm working") ============
 router.post('/shifts/:id/arrived', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   run(`UPDATE shifts SET arrived_at = datetime('now') WHERE id = ?`, [req.params.id]);
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = getSupervisorsForClient(shift.client_id);
-  notifyMany([...managers.map((m) => m.id), ...supervisors.map((s) => s.id)], {
+  const notice = {
     type: 'shift_reminder',
     title: `${u.full_name} has arrived`,
     body: `${shift.job_title} at ${shift.company_name}`,
     link: `/manager/dashboard.html#shifts`
-  });
+  };
+  notifyMany(managers.map(m => m.id), notice);
+  notifyMany(supervisors.map(s => s.id), {...notice, link: '/client/dashboard.html#shifts'});
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_arrived', entityType: 'shift', entityId: req.params.id });
   res.json({ ok: true });
 });
@@ -166,11 +181,12 @@ router.post('/shifts/:id/arrived', (req, res) => {
 // office is closed" scenario the whole platform exists to solve.
 router.post('/shifts/:id/emergency', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT s.*, c.company_name, c.site_name FROM shifts s JOIN clients c ON c.id = s.client_id WHERE s.id = ? AND s.temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
+  if (!shift) return res.status(404).json({ error: 'Shift not found' });
   const { details } = req.body;
 
   const convId = id('cnv');
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   const supervisors = shift ? getSupervisorsForClient(shift.client_id) : [];
   run(
     `INSERT INTO conversations (id, agency_id, client_id, type, subject, shift_id, created_by, priority)
@@ -207,9 +223,10 @@ router.post('/shifts/:id/emergency', (req, res) => {
 // ============ REPORT TIME PROBLEM (structured — worker-initiated) ============
 router.post('/shifts/:id/time-dispute', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = mediaShiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   const { category, reportedHours, workerClaim, photoDataUrl } = req.body;
+  if (photoDataUrl != null) { try { validateDataImage(photoDataUrl); } catch (error) { return res.status(400).json({ error: error.message }); } }
   const validCategories = ['wrong_clock_in', 'wrong_clock_out', 'missing_hours', 'break_issue', 'other'];
   if (!category || !validCategories.includes(category)) {
     return res.status(400).json({ error: 'A valid category is required' });
@@ -222,7 +239,7 @@ router.post('/shifts/:id/time-dispute', (req, res) => {
      VALUES (?,?,?,?,?,?,?,?)`,
     [disputeId, u.agency_id, req.params.id, category, u.id, reportedHours, workerClaim || null, photoDataUrl || null]
   );
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'message',
     title: `Time issue reported by ${u.full_name}`,
@@ -236,7 +253,7 @@ router.post('/shifts/:id/time-dispute', (req, res) => {
 // ============ CAN'T MAKE SHIFT (cancel + trigger replacement search) ============
 router.post('/shifts/:id/cant-make-it', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   if (['completed', 'no_show', 'replaced', 'cancelled'].includes(shift.status)) {
     return res.status(400).json({ error: 'This shift is no longer active' });
@@ -269,13 +286,14 @@ router.post('/shifts/:id/cant-make-it', (req, res) => {
 // ============ BREAKS ============
 router.get('/shifts/:id/breaks', (req, res) => {
   const u = req.session.user;
+  if (!shiftForSession(u, req.params.id)) return res.status(404).json({ error: 'Shift not found' });
   const rows = all('SELECT * FROM shift_breaks WHERE shift_id = ? AND temp_id = ? ORDER BY started_at DESC', [req.params.id, u.id]);
   res.json({ breaks: rows });
 });
 
 router.post('/shifts/:id/breaks/start', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   const open = get(`SELECT * FROM shift_breaks WHERE shift_id = ? AND temp_id = ? AND ended_at IS NULL`, [req.params.id, u.id]);
   if (open) return res.status(400).json({ error: 'A break is already in progress' });
@@ -292,6 +310,7 @@ router.post('/shifts/:id/breaks/start', (req, res) => {
 
 router.post('/shifts/:id/breaks/end', (req, res) => {
   const u = req.session.user;
+  if (!shiftForSession(u, req.params.id)) return res.status(404).json({ error: 'Shift not found' });
   const open = get(`SELECT * FROM shift_breaks WHERE shift_id = ? AND temp_id = ? AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`, [req.params.id, u.id]);
   if (!open) return res.status(400).json({ error: 'No break in progress' });
   run(`UPDATE shift_breaks SET ended_at = datetime('now') WHERE id = ?`, [open.id]);
@@ -302,16 +321,18 @@ router.post('/shifts/:id/breaks/end', (req, res) => {
 // ============ PHOTO PROOF ============
 router.get('/shifts/:id/photos', (req, res) => {
   const u = req.session.user;
+  if (!mediaShiftForSession(u, req.params.id)) return res.status(404).json({ error: 'Shift not found' });
   const rows = all('SELECT * FROM shift_photos WHERE shift_id = ? AND temp_id = ? ORDER BY created_at DESC', [req.params.id, u.id]);
   res.json({ photos: rows });
 });
 
 router.post('/shifts/:id/photos', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
   const { dataUrl, caption } = req.body;
-  if (!dataUrl) return res.status(400).json({ error: 'A photo is required' });
+  try { validateDataImage(dataUrl); } catch (error) { return res.status(400).json({ error: error.message }); }
+  if (caption != null && (typeof caption !== 'string' || caption.length > 500)) return res.status(400).json({ error: 'Caption must be text up to 500 characters' });
   const photoId = id('pho');
   run(`INSERT INTO shift_photos (id, shift_id, temp_id, data_url, caption) VALUES (?,?,?,?,?)`, [photoId, req.params.id, u.id, dataUrl, caption || null]);
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'photo_uploaded', entityType: 'shift_photo', entityId: photoId });
@@ -324,10 +345,11 @@ router.post('/issues', (req, res) => {
   const { shiftId, category, description } = req.body;
   if (!description) return res.status(400).json({ error: 'A description is required' });
 
-  const shift = shiftId ? get('SELECT * FROM shifts WHERE id = ? AND temp_id = ?', [shiftId, u.id]) : null;
+  const shift = shiftId ? shiftForSession(u, shiftId) : null;
+  if (shiftId && !shift) return res.status(404).json({ error: 'Shift not found' });
 
   const convId = id('cnv');
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [u.agency_id]);
   run(
     `INSERT INTO conversations (id, agency_id, client_id, type, subject, shift_id, created_by, priority)
      VALUES (?,?,?,?,?,?,?,?)`,
@@ -361,10 +383,9 @@ router.post('/issues', (req, res) => {
 
 // ============ SHIFT TIMELINE ============
 router.get('/shifts/:id/timeline', (req, res) => {
-  const u = req.session.user;
-  const shift = get('SELECT id FROM shifts WHERE id = ? AND temp_id = ?', [req.params.id, u.id]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found' });
-  res.json(buildShiftTimeline(req.params.id));
+  res.json(buildShiftTimeline(req.params.id, req.session.user));
 });
 
 // ============ PROFILE ============
@@ -377,10 +398,16 @@ router.get('/profile', (req, res) => {
 router.post('/profile', (req, res) => {
   const u = req.session.user;
   const { fullName, phone, languagePref, avatarUrl } = req.body;
+  if ((fullName != null && (typeof fullName !== 'string' || !fullName.trim() || fullName.length > 100)) ||
+      (phone != null && (typeof phone !== 'string' || phone.length > 50)) ||
+      (languagePref != null && !['en', 'es'].includes(languagePref))) return res.status(400).json({ error: 'Invalid profile name, phone or language' });
+  let safeAvatar = null;
+  if (avatarUrl != null) { try { safeAvatar = normalizeImageSource(avatarUrl); } catch (error) { return res.status(400).json({ error: error.message }); } }
+
   run(
     `UPDATE users SET full_name = COALESCE(?, full_name), phone = COALESCE(?, phone),
        language_pref = COALESCE(?, language_pref), avatar_url = COALESCE(?, avatar_url) WHERE id = ?`,
-    [fullName || null, phone || null, languagePref || null, avatarUrl || null, u.id]
+    [fullName ? fullName.trim() : null, phone || null, languagePref || null, safeAvatar, u.id]
   );
   logAudit({ agencyId: u.agency_id, actorId: u.id, action: 'temp_updated_profile', entityType: 'user', entityId: u.id });
   res.json({ ok: true });

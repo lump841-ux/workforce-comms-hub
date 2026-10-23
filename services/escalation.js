@@ -43,12 +43,21 @@ function resolveRecipients({ agencyId, clientId, tier }) {
   return all(`SELECT id FROM users WHERE agency_id = ? AND role = 'agency_manager'`, [agencyId]);
 }
 
-function acknowledgeEscalation(escId, userId) {
-  run(`UPDATE escalations SET status = 'acknowledged', acknowledged_at = datetime('now'), assigned_to = ? WHERE id = ?`, [userId, escId]);
+// Tenant scope is mandatory even for callers outside the HTTP router.
+function acknowledgeEscalation(escId, userId, agencyId) {
+  if (!agencyId) return false;
+  const escalation = get('SELECT status FROM escalations WHERE id = ? AND agency_id = ? AND archived_at IS NULL', [escId, agencyId]);
+  if (!escalation) return false;
+  // A repeated acknowledge must not reopen a resolved issue.
+  if (escalation.status === 'resolved' || escalation.status === 'acknowledged') return true;
+  return !!run(`UPDATE escalations SET status = 'acknowledged', acknowledged_at = datetime('now'), assigned_to = ?
+    WHERE id = ? AND agency_id = ? AND status = 'open' AND archived_at IS NULL`, [userId, escId, agencyId]).changes;
 }
 
-function resolveEscalation(escId, userId) {
-  run(`UPDATE escalations SET status = 'resolved', resolved_at = datetime('now'), assigned_to = COALESCE(assigned_to, ?) WHERE id = ?`, [userId, escId]);
+function resolveEscalation(escId, userId, agencyId) {
+  if (!agencyId) return false;
+  return !!run(`UPDATE escalations SET status = 'resolved', resolved_at = COALESCE(resolved_at, datetime('now')), assigned_to = COALESCE(assigned_to, ?)
+    WHERE id = ? AND agency_id = ? AND archived_at IS NULL`, [userId, escId, agencyId]).changes;
 }
 
 // Auto bump: escalations open too long without acknowledgment move up a tier

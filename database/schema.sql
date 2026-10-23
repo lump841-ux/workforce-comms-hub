@@ -370,3 +370,13 @@ CREATE INDEX IF NOT EXISTS idx_col_org ON client_org_agency_links(client_org_id)
 CREATE INDEX IF NOT EXISTS idx_col_agency ON client_org_agency_links(agency_id, status);
 CREATE INDEX IF NOT EXISTS idx_temp_invites_token ON temp_invites(token);
 CREATE INDEX IF NOT EXISTS idx_temp_invites_agency ON temp_invites(agency_id, status);
+
+-- Recovery tokens store only SHA-256 digests; raw tokens exist only in delivery adapter.
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES users(id),
+ token_hash TEXT UNIQUE NOT NULL,
+ expires_at INTEGER NOT NULL,
+ used_at INTEGER,
+ created_at INTEGER NOT NULL
+);

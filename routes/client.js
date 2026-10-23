@@ -1,3 +1,6 @@
+const { shiftForSession, replacementForSession } = require('../services/shiftAccess');
+const { mediaShiftForSession } = require('../services/mediaAccess');
+const { validateDataImage } = require('../public/media-policy');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { run, all, get } = require('../database/db');
@@ -22,8 +25,8 @@ router.get('/agencies', (req, res) => {
     `SELECT l.id as linkId, l.status, a.id as agencyId, a.name as agencyName, c.id as clientId, c.site_name
      FROM client_org_agency_links l
      JOIN agencies a ON a.id = l.agency_id
-     JOIN clients c ON c.id = l.client_id
-     WHERE l.client_org_id = ?
+     JOIN clients c ON c.id = l.client_id AND c.agency_id = l.agency_id
+     WHERE l.client_org_id = ? AND c.archived_at IS NULL
      ORDER BY l.created_at ASC`,
     [u.client_org_id]
   );
@@ -34,7 +37,7 @@ router.post('/switch-agency', (req, res) => {
   const u = req.session.user;
   const { linkId } = req.body;
   const link = get(
-    `SELECT * FROM client_org_agency_links WHERE id = ? AND client_org_id = ? AND status = 'active'`,
+    `SELECT l.* FROM client_org_agency_links l JOIN clients c ON c.id = l.client_id AND c.agency_id = l.agency_id WHERE l.id = ? AND l.client_org_id = ? AND l.status = 'active' AND c.archived_at IS NULL`,
     [linkId, u.client_org_id]
   );
   if (!link) return res.status(404).json({ error: 'Agency connection not found' });
@@ -75,9 +78,9 @@ router.get('/overview', (req, res) => {
   const u = req.session.user;
   if (!u.client_id) return res.json({ noAgencyConnected: true, todayShiftCount: 0, tempsOnSiteToday: 0, noShowsToday: 0, openEscalations: 0 });
   const today = new Date().toISOString().slice(0, 10);
-  const todayShifts = all(`SELECT * FROM shifts WHERE client_id = ? AND shift_date = ?`, [u.client_id, today]);
+  const todayShifts = all(`SELECT * FROM shifts WHERE client_id = ? AND agency_id = ? AND archived_at IS NULL AND shift_date = ?`, [u.client_id, u.agency_id, today]);
   const noShowsToday = todayShifts.filter((s) => s.status === 'no_show').length;
-  const openEscalations = get(`SELECT COUNT(*) c FROM escalations WHERE client_id = ? AND status != 'resolved'`, [u.client_id]).c;
+  const openEscalations = get(`SELECT COUNT(*) c FROM escalations e WHERE e.client_id = ? AND e.agency_id = ? AND e.archived_at IS NULL AND e.status != 'resolved' AND (e.shift_id IS NULL OR EXISTS (SELECT 1 FROM shifts s WHERE s.id = e.shift_id AND s.agency_id = e.agency_id AND s.client_id = e.client_id AND s.archived_at IS NULL))`, [u.client_id, u.agency_id]).c;
   res.json({
     todayShiftCount: todayShifts.length,
     tempsOnSiteToday: todayShifts.filter((s) => s.status === 'in_progress').length,
@@ -90,8 +93,8 @@ router.get('/shifts', (req, res) => {
   const u = req.session.user;
   if (!u.client_id) return res.json({ shifts: [] });
   const { date } = req.query;
-  let sql = `SELECT s.*, w.full_name as temp_name FROM shifts s LEFT JOIN users w ON w.id = s.temp_id WHERE s.client_id = ?`;
-  const params = [u.client_id];
+  let sql = `SELECT s.*, w.full_name as temp_name FROM shifts s LEFT JOIN users w ON w.id = s.temp_id AND w.agency_id = s.agency_id AND w.archived_at IS NULL WHERE s.client_id = ? AND s.agency_id = ? AND s.archived_at IS NULL`;
+  const params = [u.client_id, u.agency_id];
   if (date) { sql += ` AND s.shift_date = ?`; params.push(date); }
   sql += ` ORDER BY s.shift_date DESC, s.start_time ASC LIMIT 100`;
   res.json({ shifts: all(sql, params) });
@@ -103,6 +106,7 @@ router.post('/raise-issue', (req, res) => {
   const { shiftId, subject, message, priority = 'urgent' } = req.body;
   if (!subject || !message) return res.status(400).json({ error: 'subject and message are required' });
 
+  if (shiftId && !shiftForSession(u, shiftId)) return res.status(404).json({ error: 'Shift not found for your organization' });
   const client = get('SELECT * FROM clients WHERE id = ?', [u.client_id]);
   if (!client) return res.status(400).json({ error: 'No client account linked to this user' });
 
@@ -114,7 +118,7 @@ router.post('/raise-issue', (req, res) => {
   );
   run(`INSERT INTO conversation_participants (id, conversation_id, user_id) VALUES (?,?,?)`, [id('cvp'), convId, u.id]);
 
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [client.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [client.agency_id]);
   for (const m of managers) {
     run(`INSERT INTO conversation_participants (id, conversation_id, user_id) VALUES (?,?,?)`, [id('cvp'), convId, m.id]);
   }
@@ -141,14 +145,14 @@ router.get('/workers', (req, res) => {
   const rows = all(
     `SELECT w.id, w.full_name, w.phone, w.email, w.avatar_url,
             MAX(s.shift_date) as last_shift_date,
-            (SELECT s2.status FROM shifts s2 WHERE s2.temp_id = w.id AND s2.client_id = ? ORDER BY s2.shift_date DESC, s2.start_time DESC LIMIT 1) as last_status,
+            (SELECT s2.status FROM shifts s2 WHERE s2.temp_id = w.id AND s2.client_id = ? AND s2.agency_id = s.agency_id AND s2.archived_at IS NULL ORDER BY s2.shift_date DESC, s2.start_time DESC LIMIT 1) as last_status,
             COUNT(s.id) as total_shifts
      FROM shifts s
-     JOIN users w ON w.id = s.temp_id
-     WHERE s.client_id = ?
+     JOIN users w ON w.id = s.temp_id AND w.agency_id = s.agency_id AND w.archived_at IS NULL
+     WHERE s.client_id = ? AND s.agency_id = ? AND s.archived_at IS NULL
      GROUP BY w.id
      ORDER BY last_shift_date DESC`,
-    [u.client_id, u.client_id]
+    [u.client_id, u.client_id, u.agency_id]
   );
   res.json({ workers: rows });
 });
@@ -162,10 +166,10 @@ router.get('/today', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const rows = all(
     `SELECT s.*, w.full_name as temp_name, w.avatar_url as temp_avatar, w.phone as temp_phone
-     FROM shifts s LEFT JOIN users w ON w.id = s.temp_id
-     WHERE s.client_id = ? AND s.shift_date = ?
+     FROM shifts s LEFT JOIN users w ON w.id = s.temp_id AND w.agency_id = s.agency_id AND w.archived_at IS NULL
+     WHERE s.client_id = ? AND s.agency_id = ? AND s.archived_at IS NULL AND s.shift_date = ?
      ORDER BY s.start_time ASC`,
-    [u.client_id, today]
+    [u.client_id, u.agency_id, today]
   );
   res.json({ workers: rows });
 });
@@ -174,10 +178,10 @@ router.get('/today', (req, res) => {
 // worker's own "Arrived" tap so a no-show can't just self-report arrival.
 router.post('/shifts/:id/confirm-arrival', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   run(`UPDATE shifts SET supervisor_confirmed_arrival_at = datetime('now'), supervisor_confirmed_arrival_by = ? WHERE id = ?`, [u.id, req.params.id]);
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'shift_reminder',
     title: `Arrival confirmed by supervisor`,
@@ -190,7 +194,7 @@ router.post('/shifts/:id/confirm-arrival', (req, res) => {
 
 router.post('/shifts/:id/report-absent', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   const { note } = req.body;
   run(`UPDATE shifts SET reported_absent_at = datetime('now'), reported_absent_by = ? WHERE id = ?`, [u.id, req.params.id]);
@@ -208,11 +212,11 @@ router.post('/shifts/:id/report-absent', (req, res) => {
 
 router.post('/shifts/:id/report-left-early', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   const { note } = req.body;
   run(`UPDATE shifts SET left_early_at = datetime('now'), left_early_by = ? WHERE id = ?`, [u.id, req.params.id]);
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'shift_reminder',
     title: `Worker left early`,
@@ -227,7 +231,7 @@ router.post('/shifts/:id/report-left-early', (req, res) => {
 // the same structured time_disputes workflow the worker uses.
 router.post('/shifts/:id/time-correction', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = shiftForSession(u, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   const { clientClaimHours, clientClaim, category } = req.body;
   if (clientClaimHours == null) return res.status(400).json({ error: 'clientClaimHours is required' });
@@ -238,7 +242,7 @@ router.post('/shifts/:id/time-correction', (req, res) => {
      VALUES (?,?,?,?,?,?,?,?)`,
     [disputeId, shift.agency_id, req.params.id, category || 'other', u.id, clientClaimHours, clientClaimHours, clientClaim || null]
   );
-  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
+  const managers = all(`SELECT id FROM users WHERE agency_id = ? AND active = 1 AND archived_at IS NULL AND role IN ('agency_manager','agency_admin','owner')`, [shift.agency_id]);
   notifyMany(managers.map((m) => m.id), {
     type: 'message',
     title: `Time correction requested by supervisor`,
@@ -258,7 +262,7 @@ router.post('/time-disputes/:id/verify', (req, res) => {
     `SELECT td.* FROM time_disputes td JOIN shifts s ON s.id = td.shift_id WHERE td.id = ? AND s.client_id = ?`,
     [req.params.id, u.client_id]
   );
-  if (!dispute) return res.status(404).json({ error: 'Dispute not found for your organization' });
+  if (!dispute || dispute.agency_id !== u.agency_id || !shiftForSession(u, dispute.shift_id)) return res.status(404).json({ error: 'Dispute not found for your organization' });
   run(`UPDATE time_disputes SET status = 'supervisor_verified', supervisor_verified_at = datetime('now'), supervisor_verified_by = ? WHERE id = ?`, [u.id, dispute.id]);
   logAudit({ agencyId: dispute.agency_id, actorId: u.id, action: 'supervisor_verified_time_dispute', entityType: 'time_dispute', entityId: dispute.id });
   res.json({ ok: true });
@@ -269,10 +273,11 @@ router.post('/time-disputes/:id/verify', (req, res) => {
 // worker's proof photos live in, tagged by uploader role.
 router.post('/shifts/:id/photos', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT * FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   const { dataUrl, caption } = req.body;
-  if (!dataUrl) return res.status(400).json({ error: 'A photo is required' });
+  try { validateDataImage(dataUrl); } catch (error) { return res.status(400).json({ error: error.message }); }
+  if (caption != null && (typeof caption !== 'string' || caption.length > 500)) return res.status(400).json({ error: 'Caption must be text up to 500 characters' });
   const photoId = id('pho');
   run(
     `INSERT INTO shift_photos (id, shift_id, temp_id, uploaded_by, uploader_role, data_url, caption)
@@ -287,7 +292,7 @@ router.post('/shifts/:id/photos', (req, res) => {
 // scoped to this supervisor's own client company so no cross-client leakage.
 router.get('/shifts/:id/photos', (req, res) => {
   const u = req.session.user;
-  const shift = get('SELECT id FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
   const rows = all(
     `SELECT p.*, u.full_name as uploader_name FROM shift_photos p
@@ -299,10 +304,9 @@ router.get('/shifts/:id/photos', (req, res) => {
 });
 
 router.get('/shifts/:id/timeline', (req, res) => {
-  const u = req.session.user;
-  const shift = get('SELECT id FROM shifts WHERE id = ? AND client_id = ?', [req.params.id, u.client_id]);
+  const shift = mediaShiftForSession(req.session.user, req.params.id);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
-  res.json(buildShiftTimeline(req.params.id));
+  res.json(buildShiftTimeline(req.params.id, req.session.user));
 });
 
 // ===== Time & Attendance =====
@@ -310,8 +314,8 @@ router.get('/attendance', (req, res) => {
   const u = req.session.user;
   if (!u.client_id) return res.json({ shifts: [], stats: {} });
   const { from, to, status } = req.query;
-  let sql = `SELECT s.*, w.full_name as temp_name FROM shifts s LEFT JOIN users w ON w.id = s.temp_id WHERE s.client_id = ?`;
-  const params = [u.client_id];
+  let sql = `SELECT s.*, w.full_name as temp_name FROM shifts s LEFT JOIN users w ON w.id = s.temp_id AND w.agency_id = s.agency_id AND w.archived_at IS NULL WHERE s.client_id = ? AND s.agency_id = ? AND s.archived_at IS NULL`;
+  const params = [u.client_id, u.agency_id];
   if (from) { sql += ` AND s.shift_date >= ?`; params.push(from); }
   if (to) { sql += ` AND s.shift_date <= ?`; params.push(to); }
   if (status) { sql += ` AND s.status = ?`; params.push(status); }
@@ -334,10 +338,10 @@ router.get('/replacement-requests', (req, res) => {
     `SELECT r.*, s.shift_date, s.start_time, s.job_title, w.full_name as original_temp_name
      FROM replacement_requests r
      JOIN shifts s ON s.id = r.original_shift_id
-     LEFT JOIN users w ON w.id = s.temp_id
-     WHERE s.client_id = ?
+     LEFT JOIN users w ON w.id = s.temp_id AND w.agency_id = s.agency_id AND w.archived_at IS NULL
+     WHERE s.client_id = ? AND s.agency_id = ? AND s.archived_at IS NULL AND r.agency_id = s.agency_id
      ORDER BY r.created_at DESC LIMIT 100`,
-    [u.client_id]
+    [u.client_id, u.agency_id]
   );
   res.json({ requests: rows });
 });
@@ -350,7 +354,7 @@ router.post('/replacement-requests', (req, res) => {
   const u = req.session.user;
   const { shiftId, reason, note } = req.body;
   if (!shiftId) return res.status(400).json({ error: 'shiftId is required' });
-  const shift = get(`SELECT * FROM shifts WHERE id = ? AND client_id = ?`, [shiftId, u.client_id]);
+  const shift = shiftForSession(u, shiftId);
   if (!shift) return res.status(404).json({ error: 'Shift not found for your organization' });
 
   try {
@@ -375,6 +379,7 @@ router.post('/replacement-requests', (req, res) => {
 // closes the loop (status moves 'filled' -> 'completed').
 router.post('/replacement-requests/:id/confirm', (req, res) => {
   const u = req.session.user;
+  if (!replacementForSession(u, req.params.id)) return res.status(404).json({ error: 'Replacement request not found for your organization' });
   try {
     const result = confirmReplacementByClient({ requestId: req.params.id, clientUserId: u.id, clientId: u.client_id });
     res.json(result);
@@ -388,8 +393,8 @@ router.get('/reports', (req, res) => {
   const u = req.session.user;
   if (!u.client_id) return res.json({});
   const { from, to } = req.query;
-  let sql = `SELECT * FROM shifts WHERE client_id = ?`;
-  const params = [u.client_id];
+  let sql = `SELECT * FROM shifts WHERE client_id = ? AND agency_id = ? AND archived_at IS NULL`;
+  const params = [u.client_id, u.agency_id];
   if (from) { sql += ` AND shift_date >= ?`; params.push(from); }
   if (to) { sql += ` AND shift_date <= ?`; params.push(to); }
   const shifts = all(sql, params);
@@ -397,7 +402,7 @@ router.get('/reports', (req, res) => {
   const completed = shifts.filter((s) => s.status === 'completed').length;
   const noShows = shifts.filter((s) => s.status === 'no_show').length;
   const fillRate = totalShifts ? Math.round(((totalShifts - noShows) / totalShifts) * 100) : 100;
-  const escalationCount = get(`SELECT COUNT(*) c FROM escalations WHERE client_id = ?`, [u.client_id]).c;
+  const escalationCount = get(`SELECT COUNT(*) c FROM escalations e WHERE e.client_id = ? AND e.agency_id = ? AND e.archived_at IS NULL AND (e.shift_id IS NULL OR EXISTS (SELECT 1 FROM shifts s WHERE s.id = e.shift_id AND s.agency_id = e.agency_id AND s.client_id = e.client_id AND s.archived_at IS NULL))`, [u.client_id, u.agency_id]).c;
   res.json({
     totalShifts,
     completed,

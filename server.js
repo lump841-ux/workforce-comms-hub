@@ -3,7 +3,11 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 
-const { init } = require('./database/db');
+const { init, db } = require('./database/db');
+const { loadSessionConfig } = require('./services/sessionConfig');
+const { SQLiteSessionStore } = require('./services/sqliteSessionStore');
+const { csrfGuard } = require('./middleware/csrf');
+const sessionConfig = loadSessionConfig();
 init();
 
 const { scanForNoShows } = require('./services/noshow');
@@ -18,22 +22,30 @@ const clientRoutes = require('./routes/client');
 
 const app = express();
 const PORT = process.env.PORT || 4400;
+if (sessionConfig.trustProxy) app.set('trust proxy', sessionConfig.trustProxy);
+app.use('/api', csrfGuard(sessionConfig));
 
-app.use(express.json());
+app.use('/api/manager/worker-import', express.json({ limit: '256kb' }));
+// Bounded images are validated by upload routes; 1 MB includes base64 overhead.
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'workforce-comms-hub-dev-secret-change-me',
+    secret: sessionConfig.secret,
+    store: new SQLiteSessionStore(db),
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 * 7, httpOnly: true }
+    cookie: sessionConfig.cookie
   })
 );
 
+app.use(require('./services/sessionIdentity').validateSession);
+app.use('/api/auth', require('./routes/recovery'));
 app.use('/api/auth', authRoutes);
 app.use('/api', agencySignupRoutes);
 app.use('/api', messageRoutes);
 app.use('/api/temp', tempRoutes);
+app.use('/api/manager/worker-import', require('./routes/workerImport'));
 app.use('/api/manager', managerRoutes);
 app.use('/api/client', clientRoutes);
 
@@ -42,6 +54,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (req, res) => res.json({ ok: true, service: 'workforce-comms-hub', time: new Date().toISOString() }));
 
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: req.originalUrl.startsWith('/api/manager/worker-import') ? 'Import request is too large. Use a CSV smaller than 128 KB.' : 'Request is too large; images must be 512 KB or smaller' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON request.' });
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });

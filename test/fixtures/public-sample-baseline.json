@@ -1,0 +1,11 @@
+{
+  "source": "394a596",
+  "unchanged": {
+    "prototype/pricing.html": "08a063546ab9cb8eac2bd47aec00595d626e0f9796c9f763992a61c121707312",
+    "prototype/signup-demo.html": "01ff19ebd5c729043b324b9fbd52914d7ef66683c326272cd9348ffa715d8fd4",
+    "server.js": "e6c2c5ddce550ed9d99ad0500c7052157635f6b375b5da9114c2450515a62fdc"
+  },
+  "seed": "const shiftMessages:any[] = [\n {id:1,thread:\"shift-001\",senderRole:\"agency\",senderName:\"Agency Coordinator\",text:\"When you arrive, ask for Tom. He is the supervisor on this shift.\",createdAt:\"7:32 AM\"},\n {id:2,thread:\"shift-001\",senderRole:\"client\",senderName:\"Tom • Client Supervisor\",text:\"Hi Maria — let me know when you're about 10 minutes away.\",createdAt:\"7:40 AM\"}\n];\nlet nextMessageId = 3;",
+  "buttonCss": ".btn{display:inline-block;padding:14px 22px;border-radius:10px;font-weight:900}",
+  "retiredClaim": "pay the one-time $2,000 implementation fee plus your first month, and your 7-day onboarding begins."
+}

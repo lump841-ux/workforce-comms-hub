@@ -1,9 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { get, run, all } = require('../database/db');
+const { db, get, run, all } = require('../database/db');
 const { id } = require('../services/ids');
 const { logAudit } = require('../services/audit');
 
+const { establishSession } = require('../services/sessionIdentity');
 const router = express.Router();
 
 // For a client_hr user, session.user.client_id/agency_id track whichever
@@ -13,7 +14,8 @@ function defaultClientLink(clientOrgId) {
   return get(
     `SELECT l.*, a.name as agency_name FROM client_org_agency_links l
      JOIN agencies a ON a.id = l.agency_id
-     WHERE l.client_org_id = ? AND l.status = 'active'
+     JOIN clients c ON c.id = l.client_id AND c.agency_id = l.agency_id
+     WHERE l.client_org_id = ? AND l.status = 'active' AND c.archived_at IS NULL
      ORDER BY l.created_at ASC LIMIT 1`,
     [clientOrgId]
   );
@@ -23,7 +25,7 @@ router.post('/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-  const user = get('SELECT * FROM users WHERE email = ? AND active = 1', [email.toLowerCase().trim()]);
+  const user = get('SELECT * FROM users WHERE email = ? AND active = 1 AND archived_at IS NULL', [email.toLowerCase().trim()]);
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
   const ok = bcrypt.compareSync(password, user.password_hash);
@@ -40,7 +42,7 @@ router.post('/login', (req, res) => {
     clientId = link ? link.client_id : null;
   }
 
-  req.session.user = {
+  const sessionUser = {
     id: user.id,
     role: user.role,
     full_name: user.full_name,
@@ -53,7 +55,7 @@ router.post('/login', (req, res) => {
 
   logAudit({ agencyId, actorId: user.id, action: 'login', entityType: 'user', entityId: user.id });
 
-  res.json({ ok: true, user: req.session.user });
+  establishSession(req, res, sessionUser);
 });
 
 router.post('/logout', (req, res) => {
@@ -79,11 +81,13 @@ router.post('/temp-invite/:token/accept', (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Choose a password (6+ characters)' });
 
+  db.exec('BEGIN IMMEDIATE');
+  try {
   const invite = get('SELECT * FROM temp_invites WHERE token = ?', [req.params.token]);
-  if (!invite || invite.status !== 'pending') return res.status(404).json({ error: 'This invite link is no longer valid' });
+  if (!invite || invite.status !== 'pending') { db.exec('ROLLBACK'); return res.status(404).json({ error: 'This invite link is no longer valid' }); }
 
   const existing = get('SELECT id FROM users WHERE email = ?', [invite.email]);
-  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+  if (existing) { db.exec('ROLLBACK'); return res.status(409).json({ error: 'An account with that email already exists' }); }
 
   const userId = id('usr');
   run(
@@ -92,9 +96,11 @@ router.post('/temp-invite/:token/accept', (req, res) => {
   );
   run(`UPDATE temp_invites SET status = 'accepted', accepted_at = datetime('now') WHERE id = ?`, [invite.id]);
 
-  req.session.user = { id: userId, role: 'temp', full_name: invite.full_name, email: invite.email, agency_id: invite.agency_id, client_id: null };
+  const sessionUser = { id: userId, role: 'temp', full_name: invite.full_name, email: invite.email, agency_id: invite.agency_id, client_id: null };
   logAudit({ agencyId: invite.agency_id, actorId: userId, action: 'temp_invite_accepted', entityType: 'user', entityId: userId });
-  res.json({ ok: true, user: req.session.user });
+  db.exec('COMMIT');
+  establishSession(req, res, sessionUser);
+  } catch { db.exec('ROLLBACK'); res.status(503).json({error:'Unable to accept invitation. Please try again later.'}); }
 });
 
 // Agency-issued invite for a client HR contact — mirrors the temp-invite
@@ -113,13 +119,16 @@ router.post('/client-invite/:token/accept', (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Choose a password (6+ characters)' });
 
+  db.exec('BEGIN IMMEDIATE');
+  try {
   const invite = get('SELECT * FROM client_invites WHERE token = ?', [req.params.token]);
-  if (!invite || invite.status !== 'pending') return res.status(404).json({ error: 'This invite link is no longer valid' });
+  if (!invite || invite.status !== 'pending') { db.exec('ROLLBACK'); return res.status(404).json({ error: 'This invite link is no longer valid' }); }
 
   const existing = get('SELECT id FROM users WHERE email = ?', [invite.email]);
-  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+  if (existing) { db.exec('ROLLBACK'); return res.status(409).json({ error: 'An account with that email already exists' }); }
 
-  const client = get('SELECT company_name FROM clients WHERE id = ?', [invite.client_id]);
+  const client = get('SELECT company_name FROM clients WHERE id = ? AND agency_id = ? AND archived_at IS NULL', [invite.client_id, invite.agency_id]);
+  if (!client) { db.exec('ROLLBACK'); return res.status(404).json({ error: 'This invite link is no longer valid' }); }
   const clientOrgId = id('corg');
   run(`INSERT INTO client_orgs (id, company_name) VALUES (?,?)`, [clientOrgId, client ? client.company_name : invite.full_name]);
   const userId = id('usr');
@@ -135,9 +144,11 @@ router.post('/client-invite/:token/accept', (req, res) => {
   run(`UPDATE client_invites SET status = 'accepted', accepted_at = datetime('now') WHERE id = ?`, [invite.id]);
 
   const link = get(`SELECT agency_id, client_id FROM client_org_agency_links WHERE id = ?`, [linkId]);
-  req.session.user = { id: userId, role: 'client_hr', full_name: invite.full_name, email: invite.email, agency_id: link.agency_id, client_id: link.client_id, client_org_id: clientOrgId };
+  const sessionUser = { id: userId, role: 'client_hr', full_name: invite.full_name, email: invite.email, agency_id: link.agency_id, client_id: link.client_id, client_org_id: clientOrgId };
   logAudit({ agencyId: invite.agency_id, actorId: userId, action: 'client_invite_accepted', entityType: 'user', entityId: userId });
-  res.json({ ok: true, user: req.session.user });
+  db.exec('COMMIT');
+  establishSession(req, res, sessionUser);
+  } catch { db.exec('ROLLBACK'); res.status(503).json({error:'Unable to accept invitation. Please try again later.'}); }
 });
 
 // Self-serve client signup — a company can create its own Twanova login
@@ -163,9 +174,9 @@ router.post('/register-client', (req, res) => {
     [userId, clientOrgId, fullName, email.toLowerCase().trim(), hash]
   );
 
-  req.session.user = { id: userId, role: 'client_hr', full_name: fullName, email, agency_id: null, client_id: null, client_org_id: clientOrgId };
+  const sessionUser = { id: userId, role: 'client_hr', full_name: fullName, email, agency_id: null, client_id: null, client_org_id: clientOrgId };
   logAudit({ actorId: userId, action: 'client_registered', entityType: 'client_org', entityId: clientOrgId });
-  res.json({ ok: true, user: req.session.user });
+  establishSession(req, res, sessionUser);
 });
 
 // Emergency password reset for demo/test accounts — locked behind a secret
@@ -174,7 +185,7 @@ router.post('/register-client', (req, res) => {
 // login until that's built.
 router.post('/dev/reset-password', (req, res) => {
   const { secret, email, newPassword } = req.body;
-  if (!process.env.DEV_RESET_SECRET || secret !== process.env.DEV_RESET_SECRET) {
+  if (process.env.NODE_ENV === 'production' || !process.env.DEV_RESET_SECRET || secret !== process.env.DEV_RESET_SECRET) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   if (!email || !newPassword || newPassword.length < 6) {
@@ -182,7 +193,7 @@ router.post('/dev/reset-password', (req, res) => {
   }
   const user = get('SELECT * FROM users WHERE email = ?', [email.toLowerCase().trim()]);
   if (!user) return res.status(404).json({ error: 'No account with that email' });
-  run('UPDATE users SET password_hash = ? WHERE id = ?', [bcrypt.hashSync(newPassword, 10), user.id]);
+  run('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?', [bcrypt.hashSync(newPassword, 10), user.id]);
   res.json({ ok: true });
 });
 

@@ -4,6 +4,7 @@ const { run, get } = require('../database/db');
 const { id } = require('../services/ids');
 const { logAudit } = require('../services/audit');
 
+const { establishSession } = require('../services/sessionIdentity');
 const router = express.Router();
 
 function slugify(name) {
@@ -41,10 +42,10 @@ router.post('/agency-signup', (req, res) => {
     [userId, agencyId, 'owner', adminName, email.toLowerCase().trim(), hash]
   );
 
-  req.session.user = { id: userId, role: 'owner', full_name: adminName, email, agency_id: agencyId, client_id: null };
+  const sessionUser = { id: userId, role: 'owner', full_name: adminName, email, agency_id: agencyId, client_id: null };
   logAudit({ agencyId, actorId: userId, action: 'agency_signup', entityType: 'agency', entityId: agencyId });
 
-  res.json({ ok: true, agencySlug: slug, user: req.session.user });
+  establishSession(req, res, sessionUser, { agencySlug: slug });
 });
 
 module.exports = router;

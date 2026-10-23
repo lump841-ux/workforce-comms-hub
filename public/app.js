@@ -1,8 +1,18 @@
 // Shared client-side helpers used by all dashboards
+// User-written fields are text, never trusted HTML. Safe in text and quoted attributes.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
+}
+// Legacy unsafe media is replaced at display time, without rewriting stored records.
+function safeImageSrc(value) {
+  try { return MediaPolicy.normalizeImageSource(value); } catch (_) { return '/favicon-32.png'; }
+}
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Twanova-CSRF': '1' },
     credentials: 'same-origin',
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
@@ -28,7 +38,9 @@ function fmtDateTime(d) {
 }
 
 function pill(status) {
-  return `<span class="pill pill-${status}">${status.replace(/_/g, ' ')}</span>`;
+  const value = String(status ?? '');
+  const className = /^[a-z0-9_-]+$/i.test(value) ? value : 'unknown';
+  return `<span class="pill pill-${className}">${escapeHtml(value.replace(/_/g, ' '))}</span>`;
 }
 
 function logout() {

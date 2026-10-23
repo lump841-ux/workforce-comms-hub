@@ -1,7 +1,8 @@
-const { run, all, get } = require('../database/db');
+const { db, run, all, get } = require('../database/db');
 const { id } = require('./ids');
 const { notify, notifyMany } = require('./notify');
 const { logAudit } = require('./audit');
+const { getSupervisorsForClient } = require('./supervisors');
 
 // Finds available temps in the same agency who are not already booked
 // for an overlapping shift on that date, ranks by fewest current shifts
@@ -32,12 +33,8 @@ function managersFor(agencyId) {
   return all(`SELECT id FROM users WHERE agency_id = ? AND role IN ('agency_manager','agency_admin','owner')`, [agencyId]);
 }
 
-// Any client_hr user currently pointed at this client site gets the client
-// side of a replacement notification — same lookup style used elsewhere
-// (e.g. supervisor notifications on running-late/emergency).
-function supervisorsFor(clientId) {
-  return all(`SELECT id FROM users WHERE client_id = ? AND role = 'client_hr'`, [clientId]);
-}
+// Resolve durable client-organization links, including invited supervisors.
+const supervisorsFor = getSupervisorsForClient;
 
 // Client raises a replacement request but the agency has not acted on it
 // yet — nothing is searched or broadcast to workers until an agency user
@@ -162,58 +159,80 @@ function rejectReplacementRequest({ requestId, actorId, note }) {
   return { ok: true };
 }
 
-// Temp accepts an offered replacement shift — first to accept wins (race-safe via status check)
+// Only an open offer may be accepted. One SQLite transaction covers the claim,
+// shift, notifications and audit so retries/failures cannot create partial cover.
 function acceptReplacement(replacementRequestId, tempId) {
-  const reqRow = get('SELECT * FROM replacement_requests WHERE id = ?', [replacementRequestId]);
-  if (!reqRow) throw new Error('Replacement request not found');
-  if (reqRow.status === 'filled') return { ok: false, reason: 'already_filled' };
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const refuse = (reason) => { db.exec('ROLLBACK'); return { ok: false, reason }; };
+    const reqRow = get('SELECT * FROM replacement_requests WHERE id = ?', [replacementRequestId]);
+    if (!reqRow) throw new Error('Replacement request not found');
+    if (reqRow.status !== 'offered' || reqRow.filled_shift_id) return refuse('offer_closed');
 
-  const candidate = get('SELECT * FROM replacement_candidates WHERE replacement_request_id = ? AND temp_id = ?', [replacementRequestId, tempId]);
-  if (!candidate) throw new Error('Not an eligible candidate for this shift');
+    const candidate = get('SELECT * FROM replacement_candidates WHERE replacement_request_id = ? AND temp_id = ?', [replacementRequestId, tempId]);
+    if (!candidate || candidate.response !== null) throw new Error('Not an eligible candidate for this shift');
+    const eligibleTemp = get("SELECT id FROM users WHERE id = ? AND agency_id = ? AND role = 'temp' AND active = 1 AND archived_at IS NULL", [tempId, reqRow.agency_id]);
+    if (!eligibleTemp) throw new Error('Not an eligible candidate for this shift');
 
-  const original = get('SELECT * FROM shifts WHERE id = ?', [reqRow.original_shift_id]);
+    const original = get('SELECT * FROM shifts WHERE id = ? AND agency_id = ?', [reqRow.original_shift_id, reqRow.agency_id]);
+    if (!original || original.archived_at || original.replacement_shift_id || ['replaced', 'completed', 'cancelled'].includes(original.status)) return refuse('shift_closed');
 
-  const newShiftId = id('sft');
-  run(
-    `INSERT INTO shifts (id, agency_id, client_id, temp_id, job_title, shift_date, start_time, end_time, status, confirmed_at, original_shift_id)
-     VALUES (?,?,?,?,?,?,?,?, 'confirmed', datetime('now'), ?)`,
-    [newShiftId, original.agency_id, original.client_id, tempId, original.job_title, original.shift_date, original.start_time, original.end_time, original.id]
-  );
+    // Re-check availability at claim time, not only when the offer was sent.
+    // Half-open intervals allow back-to-back shifts and handle overnight work.
+    const conflict = get(
+      `SELECT id FROM shifts WHERE temp_id = ? AND id != ? AND archived_at IS NULL
+         AND status IN ('scheduled','confirmed','in_progress')
+         AND datetime(shift_date || ' ' || start_time) < datetime(? || ' ' || ?, ?)
+         AND datetime(shift_date || ' ' || end_time,
+           CASE WHEN end_time <= start_time THEN '+1 day' ELSE '+0 day' END) > datetime(? || ' ' || ?)`,
+      [tempId, original.id, original.shift_date, original.end_time,
+        original.end_time <= original.start_time ? '+1 day' : '+0 day', original.shift_date, original.start_time]
+    );
+    if (conflict || tempId === original.temp_id) return refuse('worker_unavailable');
 
-  run(`UPDATE shifts SET status = 'replaced', replacement_shift_id = ? WHERE id = ?`, [newShiftId, original.id]);
-  run(
-    `UPDATE replacement_requests SET status = 'filled', filled_by_temp_id = ?, filled_shift_id = ?, filled_at = datetime('now') WHERE id = ?`,
-    [tempId, newShiftId, replacementRequestId]
-  );
-  run(`UPDATE replacement_candidates SET response = 'accepted', responded_at = datetime('now') WHERE id = ?`, [candidate.id]);
-  run(
-    `UPDATE replacement_candidates SET response = 'declined', responded_at = datetime('now')
-     WHERE replacement_request_id = ? AND temp_id != ? AND response IS NULL`,
-    [replacementRequestId, tempId]
-  );
+    const newShiftId = id('sft');
+    run(
+      `INSERT INTO shifts (id, agency_id, client_id, temp_id, job_title, shift_date, start_time, end_time, status, confirmed_at, original_shift_id)
+       VALUES (?,?,?,?,?,?,?,?, 'confirmed', datetime('now'), ?)`,
+      [newShiftId, original.agency_id, original.client_id, tempId, original.job_title, original.shift_date, original.start_time, original.end_time, original.id]
+    );
 
-  const noShowEvent = reqRow.no_show_event_id ? get('SELECT * FROM no_show_events WHERE id = ?', [reqRow.no_show_event_id]) : null;
-  if (noShowEvent) {
-    run(`UPDATE no_show_events SET resolved = 1, resolution = 'replaced', resolved_at = datetime('now') WHERE id = ?`, [noShowEvent.id]);
-  }
+    run(`UPDATE shifts SET status = 'replaced', replacement_shift_id = ? WHERE id = ?`, [newShiftId, original.id]);
+    run(
+      `UPDATE replacement_requests SET status = 'filled', filled_by_temp_id = ?, filled_shift_id = ?, filled_at = datetime('now') WHERE id = ?`,
+      [tempId, newShiftId, replacementRequestId]
+    );
+    run(`UPDATE replacement_candidates SET response = 'accepted', responded_at = datetime('now') WHERE id = ?`, [candidate.id]);
+    run(
+      `UPDATE replacement_candidates SET response = 'declined', responded_at = datetime('now')
+       WHERE replacement_request_id = ? AND temp_id != ? AND response IS NULL`,
+      [replacementRequestId, tempId]
+    );
 
-  const temp = get('SELECT full_name FROM users WHERE id = ?', [tempId]);
-  notifyMany(managersFor(original.agency_id).map((m) => m.id), {
-    type: 'replacement',
-    title: 'Shift covered',
-    body: `${original.job_title} on ${original.shift_date} has been filled by a replacement temp.`,
-    link: `/manager/dashboard.html#shifts`
-  });
-  notifyMany(supervisorsFor(original.client_id).map((s) => s.id), {
-    type: 'replacement',
-    title: 'Replacement worker assigned',
-    body: `${temp ? temp.full_name : 'A replacement worker'} will cover ${original.job_title} on ${original.shift_date} ${original.start_time}-${original.end_time}.`,
-    link: `/client/dashboard.html#replacements`
-  });
+    const noShowEvent = reqRow.no_show_event_id ? get('SELECT * FROM no_show_events WHERE id = ?', [reqRow.no_show_event_id]) : null;
+    if (noShowEvent) {
+      run(`UPDATE no_show_events SET resolved = 1, resolution = 'replaced', resolved_at = datetime('now') WHERE id = ?`, [noShowEvent.id]);
+    }
 
-  logAudit({ agencyId: original.agency_id, actorId: tempId, action: 'replacement_accepted', entityType: 'shift', entityId: newShiftId });
+    const temp = get('SELECT full_name FROM users WHERE id = ?', [tempId]);
+    notifyMany(managersFor(original.agency_id).map((m) => m.id), {
+      type: 'replacement',
+      title: 'Shift covered',
+      body: `${original.job_title} on ${original.shift_date} has been filled by a replacement temp.`,
+      link: `/manager/dashboard.html#shifts`
+    });
+    notifyMany(supervisorsFor(original.client_id).map((s) => s.id), {
+      type: 'replacement',
+      title: 'Replacement worker assigned',
+      body: `${temp ? temp.full_name : 'A replacement worker'} will cover ${original.job_title} on ${original.shift_date} ${original.start_time}-${original.end_time}.`,
+      link: `/client/dashboard.html#replacements`
+    });
 
-  return { ok: true, newShiftId };
+    logAudit({ agencyId: original.agency_id, actorId: tempId, action: 'replacement_accepted', entityType: 'shift', entityId: newShiftId });
+
+    db.exec('COMMIT');
+    return { ok: true, newShiftId };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 
 // Client's final acknowledgment that the replacement worked out — closes

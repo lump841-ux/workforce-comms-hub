@@ -23,7 +23,7 @@ function request(server, { method, path, body, cookie }) {
     const data = body ? JSON.stringify(body) : null;
     const req = http.request(
       { hostname: '127.0.0.1', port: server.address().port, method, path, headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json', 'X-Twanova-CSRF': '1',
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
         ...(cookie ? { Cookie: cookie } : {})
       }},
@@ -364,13 +364,13 @@ async function main() {
   // display" gap (manager/client previously had no GET route at all).
   const workerPhotoRes = await request(server, {
     method: 'POST', path: `/api/temp/shifts/${shiftId}/photos`, cookie: tempCookie,
-    body: { dataUrl: 'data:image/png;base64,AAA=', caption: 'Arrived on site' }
+    body: { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7FsAAAAASUVORK5CYII=', caption: 'Arrived on site' }
   });
   assert(workerPhotoRes.status === 200 && workerPhotoRes.body.ok, 'worker uploads a shift photo');
 
   const supervisorPhotoRes = await request(server, {
     method: 'POST', path: `/api/client/shifts/${shiftId}/photos`, cookie: supCookie,
-    body: { dataUrl: 'data:image/png;base64,BBB=', caption: 'Confirmed arrival' }
+    body: { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7FsAAAAASUVORK5CYII=', caption: 'Confirmed arrival' }
   });
   assert(supervisorPhotoRes.status === 200 && supervisorPhotoRes.body.ok, 'supervisor uploads a shift photo');
 

@@ -4,7 +4,9 @@ const { get, all } = require('../database/db');
 // and returns one sorted, timestamped feed — this is the "SHIFT TIMELINE"
 // the spec calls for: a documented record of exactly what happened, without
 // anyone having to write it up by hand or make a phone call to reconstruct it.
-function buildShiftTimeline(shiftId) {
+// Callers validate a current, active shift relationship before entering.
+function buildShiftTimeline(shiftId, viewer) {
+  if (!viewer?.id || !viewer.agency_id) return null;
   const shift = get(
     `SELECT s.*, c.company_name, c.site_name, u.full_name as temp_name
      FROM shifts s JOIN clients c ON c.id = s.client_id LEFT JOIN users u ON u.id = s.temp_id
@@ -40,7 +42,8 @@ function buildShiftTimeline(shiftId) {
     push(b.ended_at, 'break_ended', 'Break ended');
   }
 
-  const photos = all('SELECT sp.*, u.full_name as uploader_name FROM shift_photos sp LEFT JOIN users u ON u.id = sp.uploaded_by WHERE sp.shift_id = ? ORDER BY sp.created_at ASC', [shiftId]);
+  const photoScope = viewer.role === 'temp' ? ' AND sp.temp_id = ?' : '';
+  const photos = all('SELECT sp.*, u.full_name as uploader_name FROM shift_photos sp LEFT JOIN users u ON u.id = sp.uploaded_by WHERE sp.shift_id = ?' + photoScope + ' ORDER BY sp.created_at ASC', viewer.role === 'temp' ? [shiftId, viewer.id] : [shiftId]);
   for (const p of photos) {
     push(p.created_at, 'photo', `Photo uploaded${p.uploader_role === 'client_hr' ? ' by supervisor' : ''}${p.caption ? `: ${p.caption}` : ''}`, { photoId: p.id, dataUrl: p.data_url });
   }
@@ -62,8 +65,9 @@ function buildShiftTimeline(shiftId) {
   const messages = all(
     `SELECT m.*, u.full_name as sender_name, u.role as sender_role FROM messages m
      JOIN conversations c ON c.id = m.conversation_id JOIN users u ON u.id = m.sender_id
-     WHERE c.shift_id = ? ORDER BY m.created_at ASC`,
-    [shiftId]
+     JOIN conversation_participants cp ON cp.conversation_id = c.id AND cp.user_id = ?
+     WHERE c.shift_id = ? AND c.agency_id = ? AND (c.client_id IS NULL OR c.client_id = ?) ORDER BY m.created_at ASC`,
+    [viewer.id, shiftId, viewer.agency_id, shift.client_id]
   );
   for (const m of messages) {
     push(m.created_at, 'message', `${m.sender_name} (${m.sender_role.replace('_', ' ')}): ${m.body.slice(0, 140)}`);
